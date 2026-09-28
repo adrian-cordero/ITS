@@ -1,0 +1,51 @@
+\ProvidesPackage{config}
+
+\usepackage{amsmath} % Not Used
+\usepackage{amsfonts} % Not Used
+\usepackage{amssymb} % Not Used
+\usepackage[utf8]{inputenc} % Not currently used, but helps processing other languages, can also be handled with babel
+\usepackage[spanish, english]{babel}
+\usepackage{csquotes}
+\usepackage{graphicx} % Not Used
+\usepackage{blindtext} % Not Used
+\usepackage{textcomp} % Not Used
+\usepackage{pgfplots} % Needed for plots
+\usepackage{comment} % For extended commented sections
+\usepackage{geometry} % For page size (if needed) and margins)
+\usepackage{tikz} % For creating diagrams
+\usetikzlibrary{positioning} % For custom positionig in elements using Tikz
+\usetikzlibrary{arrows} % For bending arrows and more styles of arrows
+\usepackage{multicol} % For multiple column tables
+\usepackage{multirow} % For multiple row tables
+\usepackage{longtable} % For creating tables that cross pages
+\usepackage[referable]{threeparttablex} % For multiple page tables and tablenotes
+\usepackage{booktabs} % Not clear yet, but as of now allows table notes
+\usepackage{authblk} % Allows several authors on the paper
+\usepackage[hidelinks]{hyperref} % For references within the document and urls
+\usepackage{cleveref} % For better \ref 
+\usepackage[acronym, toc, section, xindy]{glossaries} % For the glossary. acronym use, to be included in table of contents, to appear at the end of each section and to handle spanish, respectively
+% Date formatting
+\usepackage{datetime}
+\newdateformat{europeandate}{\THEDAY~\monthname[\THEMONTH]~\THEYEAR}
+
+% Format of bibliography
+\usepackage[style=trad-abbrv, backend=biber]{biblatex}
+\addbibresource{docs/references.bib}
+% For plots
+\pgfplotsset{width=10cm,compat=1.9} % Not Used
+
+% Page margin configuration
+\geometry{margin=2.5cm}
+
+% Indentation
+\setlength{\parindent}{0pt}
+
+% Font Type
+\renewcommand{\familydefault}{\sfdefault}
+
+% Basic unit for drawings
+\setlength{\unitlength}{1cm}
+
+% For the glossary
+\makeglossaries
+\loadglsentries{glossary}
