@@ -2,8 +2,14 @@ import matplotlib.pyplot as plt
 import geopandas as gpd
 import pandas as pd
 import fiona
+import numpy as np
+from fontTools.ttx import process
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Slider, Button
+from pyproj import Transformer
+
+#acceleration process
+#and shapes of queue discharge
 # --------------------------------------------------
 # LOAD KML MAP
 # --------------------------------------------------
@@ -27,11 +33,6 @@ timestamps = sorted(df["timestamp"].unique())
 # ------------------------------------
 # Figure
 # ------------------------------------
-offsetX = 690000
-offsetY = 5350000
-offsetZ = 0
-
-
 fig, ax = plt.subplots(figsize=(12, 12))
 
 plt.subplots_adjust(bottom=0.2)
@@ -90,22 +91,37 @@ def draw_frame(frame_idx):
 
     current = df[df["timestamp"] == t]
 
-    print("Map CRS:", gdf.crs)
-    print("Map bounds:", gdf.total_bounds)
+    #print("Map CRS:", gdf.crs)
+    #print("Map bounds:", gdf.total_bounds)
 
-    print("Trajectory X range:",
-          df["translation_x"].min(),
-          df["translation_x"].max())
+    #print("Trajectory X range:",
+     #     df["translation_x"].min(),
+      #    df["translation_x"].max())
 
-    print("Trajectory Y range:",
-          df["translation_y"].min(),
-          df["translation_y"].max())
-    scatter.set_offsets(
-        current[
-            ["translation_x", "translation_y"]
-        ].values + [365 ,78]
+    #print("Trajectory Y range:",
+     #     df["translation_y"].min(),
+      #    df["translation_y"].max())
+
+    # reference point in UTM32N
+    e0 = 692009.0
+    n0 = 5338095.0
+
+    data = current[["translation_x", "translation_y"]].values
+    # convert offsets to absolute UTM coordinates
+    easting = e0 + data[:,0]
+    northing = n0 + data[:,1]
+
+    # UTM32N -> WGS84
+    transformer = Transformer.from_crs(
+        "EPSG:32632",
+        "EPSG:4326",
+        always_xy=True
     )
-    print("hello"+str(current[["translation_x", "translation_y"]].values))
+    lon, lat = transformer.transform(easting, northing)
+    print("lon"+str(lon))
+    print("lat"+str(lat))
+    offsets = np.column_stack((lon, lat))
+    scatter.set_offsets(offsets)
 
     ax.set_title(f"Time = {t:.2f}")
 
