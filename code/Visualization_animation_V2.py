@@ -33,7 +33,7 @@ included_categories = [2, 3] #pedestrians and bicycles only
 parquet_file = (
     r"C:/Users/daans/Documents/KUL_2026_2027/"
     r"Intelligent Transport Systems/Project/GitHub ITS/"
-    r"TUMDOT - MUC - Download/Trajectory Data/Parquet/"
+    r"ITS/Parquet/"
     + f"tumdot_muc_part_{file_number}.parquet"
 )
 
