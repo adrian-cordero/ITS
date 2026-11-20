@@ -196,20 +196,15 @@ lines = lines.to_crs(epsg=CRS)
 multilinestrings = multilinestrings.to_crs(epsg=CRS)
 multipolygons = multipolygons.to_crs(epsg=CRS)
 other_relations = other_relations.to_crs(epsg=CRS)
+bicycle_rows = other_relations[other_relations["type"] == "street"]
 
-#points.plot(ax=ax, facecolor="none", edgecolor="yellow", linewidth=1)
-#multipolygons.plot(ax=ax, color="grey", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-#lines.plot(ax=ax, color="#ADD8E6", linewidth=0.6, zorder=2)
-#multilinestrings.plot(ax=ax, color="#00008B", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-#other_relations.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-bicycle_rows = other_relations[other_relations["other_tags"].str.contains("bicycle")]
-#print(other_relations["other_tags"][5].contains("network",case=False,regex=False))
-#print(bicycle_rows)
-#print(other_relations["other_tags"].str.contains('bicycle'))
-print(other_relations["other_tags"].str)
-#bicycle_rows.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-
-#lines_only.plot(ax=ax, color="BLUE", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+#Plotting
+#points.plot(ax=ax, facecolor="none", edgecolor="yellow", linewidth=1) #not needed
+#other_relations.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3) #not needed
+multipolygons.plot(ax=ax, color="grey", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+lines.plot(ax=ax, color="#ADD8E6", linewidth=0.6, zorder=2)
+multilinestrings.plot(ax=ax, color="#00008B", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+bicycle_rows.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
 
 # --------------------------------------------------
 # SATELLITE BACKGROUND
