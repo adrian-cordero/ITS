@@ -5,12 +5,13 @@ import fiona
 import numpy as np
 import mplcursors
 import contextily as ctx
-from fontTools.ufoLib.glifLib import layerInfoVersion3ValueData
-
 from matplotlib.animation import FuncAnimation
 from matplotlib.widgets import Slider, Button
 from matplotlib.lines import Line2D
 from pyproj import Transformer
+from shapely.geometry import GeometryCollection
+from shapely.geometry import Point, LineString, MultiPoint, Polygon
+from matplotlib.patches import Polygon as MplPolygon
 
 #version without precalculating frames, working slider
 # --------------------------------------------------
@@ -44,6 +45,11 @@ df = df[df["category"].isin(included_categories)]
 df = df.sort_values("timestamp")
 
 timestamps = sorted(df["timestamp"].unique())
+counts_per_time = (
+    df.groupby(["timestamp", "category"])
+      .size()
+      .unstack(fill_value=0)
+)
 
 # --------------------------------------------------
 # CATEGORY COLOURS
@@ -104,10 +110,44 @@ all_y = df["y_3857"]
 # FIGURE
 # --------------------------------------------------
 
-fig, ax = plt.subplots(figsize=(12, 12))
+fig, (ax, ax_graph) = plt.subplots(
+    1, 2,
+    figsize=(18, 10),
+    gridspec_kw={"width_ratios": [2, 1]}
+)
 
 plt.subplots_adjust(bottom=0.2)
 
+graph_lines = {}
+current_markers = {}
+
+for cat in included_categories:
+
+    color = category_colors[cat]
+
+    line, = ax_graph.plot(
+        counts_per_time.index,
+        counts_per_time[cat],
+        color=color,
+        label=category_names[cat],
+        linewidth=2
+    )
+
+    marker, = ax_graph.plot(
+        [],
+        [],
+        "o",
+        color=color,
+        markersize=8
+    )
+
+    graph_lines[cat] = line
+    current_markers[cat] = marker
+ax_graph.set_title("Objects over time")
+ax_graph.set_xlabel("Timestamp")
+ax_graph.set_ylabel("Count")
+ax_graph.legend()
+ax_graph.grid(True)
 # --------------------------------------------------
 # LEGEND
 # --------------------------------------------------
@@ -158,16 +198,228 @@ multipolygons = multipolygons.to_crs(epsg=CRS)
 other_relations = other_relations.to_crs(epsg=CRS)
 
 #points.plot(ax=ax, facecolor="none", edgecolor="yellow", linewidth=1)
-multipolygons.plot(ax=ax, color="grey", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-lines.plot(ax=ax, color="#ADD8E6", linewidth=0.6, zorder=2)
-multilinestrings.plot(ax=ax, color="#00008B", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
-other_relations.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+#multipolygons.plot(ax=ax, color="grey", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+#lines.plot(ax=ax, color="#ADD8E6", linewidth=0.6, zorder=2)
+#multilinestrings.plot(ax=ax, color="#00008B", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+#other_relations.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+bicycle_rows = other_relations[other_relations["other_tags"].str.contains("bicycle")]
+#print(other_relations["other_tags"][5].contains("network",case=False,regex=False))
+#print(bicycle_rows)
+#print(other_relations["other_tags"].str.contains('bicycle'))
+print(other_relations["other_tags"].str)
+#bicycle_rows.plot(ax=ax, color="#DAB1DA", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
+
+#lines_only.plot(ax=ax, color="BLUE", markersize=45, edgecolor="white", linewidth=0.8, zorder=3)
 
 # --------------------------------------------------
 # SATELLITE BACKGROUND
 # --------------------------------------------------
 
 #ctx.add_basemap(ax,source=ctx.providers.Esri.WorldImagery)
+
+# --------------------------------------------------
+# ANALYSIS AND CALCULATIONS
+# --------------------------------------------------
+# #Stop and exit line definition (EPSG:3857 coordinates) and discharge zone polygon definition
+#
+# # Helper functions
+# def crossed_line(prev_xy, curr_xy, line):
+#
+#     seg = LineString([
+#         prev_xy,
+#         curr_xy
+#     ])
+#
+#     return seg.intersects(line)
+#
+# def convex_hull_from_points(points):
+#
+#     if len(points) < 3:
+#         return None
+#
+#     hull = MultiPoint(points).convex_hull
+#
+#     if hull.geom_type == "Polygon":
+#         return hull
+#
+#     return None
+#
+# # Bicycle trajectories
+# bike_df = df[df["category"] == 3]
+#
+# bike_tracks = {
+#
+#     tid: grp.sort_values("timestamp")
+#
+#     for tid, grp
+#     in bike_df.groupby("track_id")
+# }
+#
+# #Detect crossing of stop line
+#
+#
+# # Events
+# event_example = {
+#     "event_id": int 9999,
+#     "pair_name": str 'test',
+#     "anchor_id": int 9999,
+#
+#     "start_time": float 1.2345,
+#     "end_time": float 9.8765,
+#
+#     "timestamps": [],
+#     "counts": [],
+#     "areas": [],
+#     "polygons": []
+# }
+# events = []
+# event_counter = 0
+#
+# for pair_name, pair in STOP_EXIT_PAIRS.items():
+#
+#     stop_line = pair["stop_line"]
+#     exit_line = pair["exit_line"]
+#
+#     for track_id, track in bike_tracks.items():
+#
+#         rows = list(track.itertuples())
+#
+#         stop_cross_time = None
+#         exit_cross_time = None
+#
+#         for i in range(1, len(rows)):
+#
+#             p1 = (
+#                 rows[i-1].x_3857,
+#                 rows[i-1].y_3857
+#             )
+#
+#             p2 = (
+#                 rows[i].x_3857,
+#                 rows[i].y_3857
+#             )
+#
+#             if stop_cross_time is None:
+#
+#                 if crossed_line(
+#                     p1,
+#                     p2,
+#                     stop_line
+#                 ):
+#
+#                     stop_cross_time = rows[i].timestamp
+#
+#             elif exit_cross_time is None:
+#
+#                 if crossed_line(
+#                     p1,
+#                     p2,
+#                     exit_line
+#                 ):
+#
+#                     exit_cross_time = rows[i].timestamp
+#                     break
+#
+#         if (
+#             stop_cross_time is not None
+#             and
+#             exit_cross_time is not None
+#         ):
+#
+#             events.append({
+#
+#                 "event_id": event_counter,
+#
+#                 "pair_name": pair_name,
+#
+#                 "anchor_id": track_id,
+#
+#                 "start_time": stop_cross_time,
+#
+#                 "end_time": exit_cross_time,
+#
+#                 "timestamps": [],
+#
+#                 "counts": [],
+#
+#                 "areas": [],
+#
+#                 "polygons": []
+#             })
+#
+#             event_counter += 1
+#
+# # Time series of events
+# for event in events:
+#
+#     start_t = event["start_time"]
+#     end_t = event["end_time"]
+#
+#     event_times = [
+#
+#         t
+#
+#         for t in timestamps
+#
+#         if start_t <= t <= end_t
+#     ]
+#
+#     for t in event_times:
+#
+#         current = bike_df[
+#             bike_df["timestamp"] == t
+#         ]
+#
+#         points = list(
+#
+#             zip(
+#                 current["x_3857"],
+#                 current["y_3857"]
+#             )
+#         )
+#
+#         hull = convex_hull_from_points(
+#             points
+#         )
+#
+#         if hull is not None:
+#
+#             area = hull.area
+#
+#         else:
+#
+#             area = 0
+#
+#         event["timestamps"].append(t)
+#
+#         event["counts"].append(
+#             len(points)
+#         )
+#
+#         event["areas"].append(area)
+#
+#         event["polygons"].append(hull)
+#
+# # Fast lookup by frame (NOT SURE WHAT THIS IS)
+# frame_event_polygons = {}
+# for event in events:
+#
+#     for t, poly in zip(
+#
+#             event["timestamps"],
+#             event["polygons"]
+#     ):
+#
+#         frame_event_polygons.setdefault(
+#             t,
+#             []
+#         )
+#
+#         if poly is not None:
+#
+#             frame_event_polygons[t].append(
+#                 poly
+#             )
 
 # --------------------------------------------------
 # SCATTER
@@ -254,6 +506,10 @@ def draw_frame(frame_idx):
     current_frame = frame_idx
 
     t = timestamps[frame_idx]
+    for cat in included_categories:
+        count = counts_per_time.loc[t, cat] if cat in counts_per_time.columns else 0
+
+        current_markers[cat].set_data([t], [count])
 
     current = df[df["timestamp"] == t]
     counts = current["category"].value_counts()
@@ -344,7 +600,7 @@ def play_pause(event):
 play_button.on_clicked(play_pause)
 
 # --------------------------------------------------
-# START
+# START ANIMATION
 # --------------------------------------------------
 
 ani = FuncAnimation(
