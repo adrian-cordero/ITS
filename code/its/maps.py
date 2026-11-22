@@ -70,6 +70,9 @@ def load_project_layers(names=DEFAULT_PROJECT_LAYERS, maps_dir=MAPS_DIR,
     layers = {}
     for name in names:
         spec = PROJECT_LAYERS[name]
+        if not (maps_dir / spec["file"]).exists():
+            warnings.warn(f"Layer '{name}' skipped: {maps_dir / spec['file']} not found")
+            continue
         gdf = load_layer(spec, maps_dir, crs)
         if gdf.empty:
             warnings.warn(f"Layer '{name}' ({spec['file']}:{spec['layer']}) is empty")

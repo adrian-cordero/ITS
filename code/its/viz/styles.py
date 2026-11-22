@@ -54,3 +54,14 @@ PROJECT_LAYER_STYLES = {
     "cycleways":     dict(facecolor="none", edgecolor="#d62728", linewidth=1.2),
 }
 DEFAULT_PROJECT_LAYER_STYLE = dict(facecolor="none", edgecolor="black", linewidth=1.0)
+
+# --------------------------------------------------
+# CROSSING LINES (keys are the `role` from its.areas.load_crossing_lines)
+# --------------------------------------------------
+
+CROSSING_LINE_STYLES = {
+    "start": dict(color="#2ca02c", linewidth=2.5, label="start edge"),
+    "end":   dict(color="#9400d3", linewidth=2.5, label="end edge"),
+    "line":  dict(color="black", linewidth=0.8, label="crossing lines"),
+}
+CROSSING_LINE_ZORDER = 5    # above the project layers, below road users

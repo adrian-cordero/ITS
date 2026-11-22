@@ -1,11 +1,18 @@
 """
 Animated playback of one trajectory part on the site map.
 
-    python code/scripts/animate.py                              # part 16, pedestrians + cyclists
+    python code/scripts/animate.py                              # part 16, cyclists only
+    python code/scripts/animate.py --categories 2 3              # pedestrians + cyclists
     python code/scripts/animate.py --part 3 --categories 1 2 3
     python code/scripts/animate.py --layers waiting_areas system
     python code/scripts/animate.py --no-graph --satellite
     python code/scripts/animate.py --save frame.png --frame 500  # still image, no window
+    python code/scripts/animate.py --lines 9                     # 9 lines where a crossing has no own N
+
+Zoom with the mouse wheel or the toolbar (magnifier, pan arrows, house = reset).
+
+Crossing areas (start/end edge + N lines in between) are drawn when
+pick_edges.py has made <layer>_parallel.gpkg.
 
 Category codes: 1 car, 2 pedestrian, 3 bicycle, 4 trailer, 5 motorcycle,
 6 truck, 7 bus, 8 scooter, 9 streetcar.
@@ -16,14 +23,18 @@ import argparse
 import _bootstrap  # noqa: F401
 import matplotlib.pyplot as plt
 
+from its.areas import load_crossing_lines, parallel_path
 from its.config import (
-    BICYCLE, DEFAULT_PROJECT_LAYERS, MAPS_DIR, N_PARTS, PEDESTRIAN, PROJECT_LAYERS,
+    BICYCLE, CROSSING_LAYER, CROSSING_LINES, DEFAULT_PROJECT_LAYERS, MAPS_DIR, N_PARTS,
+    PLOT_CRS, PROJECT_LAYERS,
 )
 from its.maps import load_basemap, load_project_layers
 from its.trajectories import counts_per_time, load_part
+from its.viz.areas import draw_crossing_lines
 from its.viz.basemap import add_satellite, draw_basemap, draw_project_layers, set_extent
 from its.viz.count_graph import CountGraph
 from its.viz.frames import precompute_frames
+from its.viz.interaction import enable_scroll_zoom
 from its.viz.legends import LiveCategoryCounts, category_legend, layer_legend
 from its.viz.player import AnimationPlayer
 
@@ -33,13 +44,19 @@ def parse_args():
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1),
                    metavar="N", help=f"trajectory part 1-{N_PARTS} (default 16)")
-    p.add_argument("--categories", type=int, nargs="+", default=[PEDESTRIAN, BICYCLE],
-                   help="category codes to show (default 2 3)")
+    p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
+                   help="category codes to show (default 3: cyclists only)")
     p.add_argument("--layers", nargs="*", default=list(DEFAULT_PROJECT_LAYERS),
                    choices=sorted(PROJECT_LAYERS), metavar="LAYER",
                    help=f"project layers to draw (default: {' '.join(DEFAULT_PROJECT_LAYERS)}; "
                         f"available: {', '.join(sorted(PROJECT_LAYERS))}). "
                         "Pass --layers with nothing after it for none.")
+    p.add_argument("--lines", type=int, default=CROSSING_LINES, metavar="N",
+                   help=f"lines between the start and end edge, for crossings without "
+                        f"their own number (set in pick_edges.py) "
+                        f"(default {CROSSING_LINES}; 0 = only the edges)")
+    p.add_argument("--no-crossings", action="store_true",
+                   help="don't draw crossing-area edges and lines")
     p.add_argument("--no-graph", action="store_true", help="hide the count-over-time graph")
     p.add_argument("--satellite", action="store_true", help="satellite background (needs internet)")
     p.add_argument("--interval", type=int, default=50, help="ms between frames (default 50)")
@@ -70,9 +87,17 @@ def main():
     set_extent(ax, df)
     draw_basemap(ax, load_basemap())
     layer_handles = draw_project_layers(ax, load_project_layers(args.layers))
+    if not args.no_crossings:
+        if parallel_path(CROSSING_LAYER).exists():
+            lines = load_crossing_lines(CROSSING_LAYER, max(args.lines, 0)).to_crs(PLOT_CRS)
+            layer_handles += draw_crossing_lines(ax, lines)
+        else:
+            print(f"No crossing areas yet ({parallel_path(CROSSING_LAYER).name} missing): "
+                  "run code/scripts/pick_edges.py")
     if args.satellite:
         add_satellite(ax)
 
+    enable_scroll_zoom(ax)
     legend = category_legend(ax, args.categories)
     layer_legend(ax, layer_handles, keep=legend)
 

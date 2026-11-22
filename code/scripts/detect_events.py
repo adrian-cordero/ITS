@@ -1,0 +1,107 @@
+"""
+Event detection for one trajectory part:
+
+  1. occupancy: how many cyclists are inside each waiting area at every
+     timestep (centre point inside the polygon)
+  2. line crossings: for every crossing (pick_edges.py), each time a
+     cyclist crosses its start line or end line, with direction
+     (+1 = start -> end, -1 = the other way). Each bike is counted at
+     most once per line and direction.
+
+    python code/scripts/detect_events.py              # part 16, cyclists
+    python code/scripts/detect_events.py --part 3 --categories 3 8
+
+Writes to results/:
+    part<P>_occupancy.csv          timestamp, area_0 ... area_7, total
+    part<P>_line_crossings.csv     every crossing: crossing_id, line, track_id, time, direction, x, y
+    part<P>_crossing_summary.csv   per crossing: bikes crossing start / end line forward and backward
+"""
+
+import argparse
+
+import _bootstrap  # noqa: F401
+import pandas as pd
+
+from its.analysis.crossings import first_forward_per_track, forward_normal, line_crossings
+from its.analysis.occupancy import count_in_areas
+from its.areas import load_crossing_lines, load_source, parallel_path
+from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, RESULTS_DIR
+from its.trajectories import add_metric_coordinates, load_part
+
+
+def detect(part, categories, layer=CROSSING_LAYER):
+    df = load_part(part, columns=["timestamp", "category", "track_id"])
+    timestamps = df["timestamp"].unique()          # every frame, also those without cyclists
+    df = add_metric_coordinates(df[df["category"].isin(categories)].copy())
+
+    areas = load_source(layer)
+    occupancy = count_in_areas(df, areas.geometry, timestamps)
+
+    rows = []
+    crossing_ids = []
+    if parallel_path(layer).exists():
+        lines = load_crossing_lines(layer, 0)       # start and end line of every crossing
+        crossing_ids = sorted(lines["crossing_id"].unique())
+        for cid, grp in lines.groupby("crossing_id"):
+            by_role = dict(zip(grp["role"], grp.geometry))
+            normal = forward_normal(by_role["start"], by_role["end"])
+            for role in ("start", "end"):
+                c = line_crossings(df, by_role[role], normal)
+                c.insert(0, "line", role)
+                c.insert(0, "crossing_id", cid)
+                rows.append(c)
+    crossings = (pd.concat(rows, ignore_index=True) if rows
+                 else pd.DataFrame(columns=["crossing_id", "line", "track_id", "time",
+                                            "direction", "x", "y"]))
+    return df, occupancy, crossings, crossing_ids
+
+
+def summarise(crossings, crossing_ids):
+    """Per crossing: distinct bikes crossing each line forward / backward
+    (crossings nobody crossed get zeros)."""
+    rows = []
+    for cid in crossing_ids:
+        grp = crossings[crossings["crossing_id"] == cid]
+        row = {"crossing_id": cid}
+        for role in ("start", "end"):
+            g = grp[grp["line"] == role]
+            row[f"{role}_forward"] = g.loc[g["direction"] > 0, "track_id"].nunique()
+            row[f"{role}_backward"] = g.loc[g["direction"] < 0, "track_id"].nunique()
+        both = (set(first_forward_per_track(grp[grp["line"] == "start"])["track_id"])
+                & set(first_forward_per_track(grp[grp["line"] == "end"])["track_id"]))
+        row["start_and_end_forward"] = len(both)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
+                   help="trajectory part (default 16)")
+    p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
+                   help="category codes to count (default 3: cyclists)")
+    args = p.parse_args()
+
+    df, occupancy, crossings, crossing_ids = detect(args.part, args.categories)
+    summary = summarise(crossings, crossing_ids)
+
+    RESULTS_DIR.mkdir(exist_ok=True)
+    stem = RESULTS_DIR / f"part{args.part}"
+    occupancy.to_csv(f"{stem}_occupancy.csv", index=False)
+    crossings.to_csv(f"{stem}_line_crossings.csv", index=False)
+    summary.to_csv(f"{stem}_crossing_summary.csv", index=False)
+
+    area_cols = [c for c in occupancy.columns if c.startswith("area_")]
+    print(f"Part {args.part}: {df['track_id'].nunique()} tracks, {len(occupancy)} timesteps "
+          f"(maps from {MAPS_DIR})")
+    print("Occupancy, max / mean per area:")
+    for c in area_cols:
+        print(f"  {c}: max {occupancy[c].max()}, mean {occupancy[c].mean():.2f}")
+    print("Bikes crossing each line (each bike once):")
+    print(summary.to_string(index=False) if len(summary) else "  no crossings defined")
+    print(f"Wrote {stem}_occupancy.csv, _line_crossings.csv, _crossing_summary.csv")
+
+
+if __name__ == "__main__":
+    main()

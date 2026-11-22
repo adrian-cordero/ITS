@@ -15,7 +15,8 @@ ITS/
 │   │   ├── trajectories.py   load_part(), tracks(), counts_per_time()
 │   │   ├── maps.py           load_basemap(), load_project_layers()
 │   │   ├── analysis/
-│   │   │   ├── crossings.py  Line crossings, discharge events, queue size over time
+│   │   │   ├── occupancy.py  Road users inside each area per timestep
+│   │   │   ├── crossings.py  Line crossings with direction and interpolated time
 │   │   │   └── queues.py     Jam density, discharge rate
 │   │   └── viz/
 │   │       ├── styles.py     All colours and line styles
@@ -24,7 +25,7 @@ ITS/
 │   │       ├── player.py     AnimationPlayer: dots, slider, play button, hover
 │   │       ├── count_graph.py, legends.py, static.py
 │   └── scripts/              What you run (see Usage)
-├── results/                  Output of run_queue_analysis.py
+├── results/                  Output of detect_events.py
 └── requirements.txt
 ```
 
@@ -52,6 +53,24 @@ Each Parquet file holds one part of the TUMDOT-MUC trajectory export (about 500k
 Web Mercator distorts sizes: at Munich's latitude, lengths are about 1.5× and areas about 2.2× their real value. Use `translation_x/y` (UTM, in metres) for distances, speeds and areas.
 
 The map layers are edited in QGIS (`zone_delimitations.qgz`). `data/maps/` holds a shared snapshot. If you edit the layers in your own folder, point `MAPS_DIR` there (see Setup) and copy the files into `data/maps/` when teammates should get them.
+
+## Map layers
+
+Layers are imported from the maps folder: `data/maps/`, or your own folder via `MAPS_DIR` (see *Data paths* under Setup).
+
+```bash
+# List the files and layers in the maps folder
+python -c "import sys; sys.path.insert(0, 'code'); from its.maps import list_available; print(list_available())"
+
+# Draw specific layers in a script (names come from PROJECT_LAYERS in config.py)
+python code/scripts/animate.py --layers waiting_areas merge_areas
+```
+
+```python
+# In your own code
+from its.maps import load_project_layers
+layers = load_project_layers(["waiting_areas", "merge_areas"])   # {name: GeoDataFrame}
+```
 
 ## Setup
 
@@ -98,18 +117,31 @@ MAPS_DIR = r"C:\Users\<you>\OneDrive\...\project\maps"
 Run the scripts from the repo root (or with the IDE's Run button). Add `--help` to any script to see all its options.
 
 ```bash
-# Animation. Default: part 16, pedestrians + cyclists, waiting/merge areas, count graph
+# Animation. Default: part 16, cyclists only, waiting areas + crossings, count graph
 python code/scripts/animate.py
 python code/scripts/animate.py --part 3 --categories 1 3 --layers waiting_areas system
 python code/scripts/animate.py --no-graph --satellite
 python code/scripts/animate.py --save frame.png --frame 500     # still image, no window
 
+# Crossing areas: add/edit/delete crossings, then rebuild with another width without re-picking
+python code/scripts/pick_edges.py --width 5
+python code/scripts/pick_edges.py --rebuild --width 4
+python code/scripts/pick_edges.py --reset              # delete all crossings and start over (asks first)
+
 # Static plot of all trajectories in a part
 python code/scripts/plot_trajectories.py --part 1 --categories 3 --layers waiting_areas
 
-# Queue analysis: writes results/events.csv and results/event_series.csv
-# (needs STOP_EXIT_PAIRS in config.py)
-python code/scripts/run_queue_analysis.py --parts 16
+# Event detection: cyclists per waiting area per timestep, and start/end line crossings
+python code/scripts/detect_events.py --part 16
+
+# Cyclists inside the waiting areas over time (checkboxes pick the areas; 4-7 by default)
+python code/scripts/plot_occupancy.py
+python code/scripts/plot_occupancy.py --areas 0 1 4
+
+# Snapshot events in a crossing's start waiting area: start-line crossings and cyclists stopping
+# (tables + a photo of the area and the whole intersection per event; --view steps through them)
+python code/scripts/snapshot_events.py --view
+python code/scripts/snapshot_events.py --near 5 --stop-speed 0.1 --stop-duration 0.5
 
 # Rebuild the Parquet files from the original CSVs
 python code/scripts/csv_to_parquet.py "path/to/Trajectory Data"
@@ -117,11 +149,36 @@ python code/scripts/csv_to_parquet.py "path/to/Trajectory Data"
 
 In the animation window, use the time slider and the Play/Pause button. Hover over a dot to see its track ID and category.
 
+### Crossing areas
+
+`pick_edges.py` builds crossings between the polygons of `CROSSING_LAYER` in `config.py` (currently the waiting areas). Each crossing is a band of constant width that runs from a start edge on one area to an end edge on another area:
+
+1. **Pick.** The window shows the areas numbered in orange, and the existing crossings as `#0`, `#1`, and so on. The terminal lists the crossings, followed by a menu:
+
+   | Command | Does |
+   |---|---|
+   | `a` | Add a crossing. It asks for the start area, the start edge, the end area, the end edge, the number of lines and the width (Enter = default). |
+   | `e 2` | Edit crossing #2. The same questions; Enter keeps the value in brackets. |
+   | `d 2` | Delete crossing #2, after a yes/no question. |
+   | `r 2` | Reverse crossing #2, swapping its start and end. |
+   | `n 2 6` | Give crossing #2 its own number of lines (6). `n 2 -` goes back to the default. |
+   | `w 2 3.5` | Give crossing #2 its own width (3.5 m). `w 2 -` goes back to the default. |
+   | `clear` | Delete all crossings and start again from #0 (asks first). |
+   | `q` | Save and quit. |
+
+   Type `c` while adding or editing to cancel. Any number of crossings can start or end at the same area. Every change is saved straight away.
+
+   `clear` (or `--reset` on the command line) first saves the current picks as `MAPS_DIR/edge_picks_backup_<date>-<time>.csv`, a new file each time. To undo, copy that file over `edge_picks.csv` and run `pick_edges.py --rebuild`.
+2. **Build.** Both edges get length **W**, centred on their original midpoints. W is the crossing's own width if you gave it one (`w <#> <W>`); otherwise it's the default (`--width`, or `CROSSING_WIDTH` in `config.py`). The end edge is turned parallel to the start edge, and the crossing is the four-sided band between them. **L** is the distance between the two edges. The original areas aren't changed.
+3. **Save.** The crossings go into `MAPS_DIR/<layer>_parallel.gpkg`, which you can open in QGIS. It has two layers: the bands, and the start/end lines. The picks are saved in `MAPS_DIR/edge_picks.csv`; use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
+
+`animate.py` draws each crossing's start and end edge, plus **N** lines in between. The lines split L into N + 1 equal parts, and each line has length W. N is the crossing's own number if you gave it one (`n <#> <N>` in the menu); otherwise it's the default (`CROSSING_LINES` in `config.py`, or `--lines N` on `animate.py`).
+
+Picks are linked to areas by their order in the layer's file. If you delete or reorder areas in QGIS, pick again.
+
 ## Status
 
 - [x] Convert the data to Parquet
 - [x] Visualise and animate trajectories on the site map, with waiting and merge areas
-- [x] Detect stop-line → exit-line events per cyclist (`its/analysis/crossings.py`)
-- [ ] Define the stop/exit lines (`STOP_EXIT_PAIRS` in `config.py`)
-- [ ] Count only cyclists inside the waiting area per event (the `zone` argument of `event_time_series`)
+- [x] Cyclists per waiting area per timestep, start/end line crossings (`detect_events.py`)
 - [ ] Jam density and discharge rate per event

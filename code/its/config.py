@@ -59,8 +59,10 @@ TRAJECTORY_CRS = 32632
 UTM_OFFSET_X = 692009.0
 UTM_OFFSET_Y = 5338095.0
 
-# Everything is drawn and analysed in Web Mercator (metres).
+# Everything is drawn in Web Mercator. Its "metres" are ~1.5x too long
+# here, so widths, distances and areas are computed in METRIC_CRS (UTM).
 PLOT_CRS = 3857
+METRIC_CRS = TRAJECTORY_CRS
 
 # --------------------------------------------------
 # ROAD-USER CATEGORIES
@@ -116,18 +118,47 @@ PROJECT_LAYERS = {
 }
 
 # Layers drawn when a script is not told otherwise.
-DEFAULT_PROJECT_LAYERS = ("waiting_areas", "merge_areas")
+DEFAULT_PROJECT_LAYERS = ("waiting_areas",)
 
 # --------------------------------------------------
-# QUEUE ANALYSIS
+# CROSSING AREAS (see its/areas.py and code/scripts/pick_edges.py)
 # --------------------------------------------------
 
-# Stop line / exit line per approach, as shapely geometries in PLOT_CRS:
-#   from shapely.geometry import LineString
-#   STOP_EXIT_PAIRS = {
-#       "rheinstr_east": {
-#           "stop_line": LineString([(x1, y1), (x2, y2)]),
-#           "exit_line": LineString([(x3, y3), (x4, y4)]),
-#       },
-#   }
-STOP_EXIT_PAIRS = {}
+# Layer whose polygons get a start and end edge.
+CROSSING_LAYER = "waiting_areas"
+
+# W: length of the start edge, the end edge and every line in between,
+# in metres. Change it and run `pick_edges.py --rebuild`; no re-picking.
+CROSSING_WIDTH = 8.0
+
+# N: number of lines drawn between the start and end edge (default for
+# animate.py --lines). They split the length L into N + 1 equal parts.
+CROSSING_LINES = 4
+
+# Picked edges, stored in MAPS_DIR next to the layers.
+EDGE_PICKS_FILE = "edge_picks.csv"
+
+# --------------------------------------------------
+# EVENT DETECTION (see code/scripts/plot_occupancy.py, snapshot_events.py)
+# --------------------------------------------------
+# Command-line options of the scripts override these for one run.
+
+# Waiting areas ticked when the occupancy plot opens.
+DEFAULT_OCCUPANCY_AREAS = (4, 5, 6, 7)
+
+# Event types snapshot_events.py detects: "crossing" (a start line crossed
+# forward) and/or "stop" (a cyclist stopping in the start waiting area).
+SNAPSHOT_EVENT_TYPES = ("crossing", "stop")
+
+# A cyclist has stopped when its speed stays below STOP_SPEED (m/s) for at
+# least STOP_DURATION (s). With EVERY_STOP = False only its first stop per
+# waiting area is an event.
+STOP_SPEED = 0.1
+STOP_DURATION = 0.5
+EVERY_STOP = False
+
+# "Near": not inside the waiting area, but within this many metres of its edge.
+NEAR_DISTANCE = 5.0
+
+# Metres around the waiting area shown on the intersection view of the photos.
+SNAPSHOT_CONTEXT = 40.0

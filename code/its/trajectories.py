@@ -29,6 +29,13 @@ def add_plot_coordinates(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def add_metric_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+    """Add columns `utm_x`, `utm_y`: the position in METRIC_CRS (UTM 32N, true metres)."""
+    df["utm_x"] = UTM_OFFSET_X + df["translation_x"].to_numpy()
+    df["utm_y"] = UTM_OFFSET_Y + df["translation_y"].to_numpy()
+    return df
+
+
 def load_part(part: int, categories=None, columns=None) -> pd.DataFrame:
     """
     Load one trajectory part, sorted by timestamp, with `x`/`y` added.
