@@ -1,0 +1,10 @@
+numpy
+pandas
+pyarrow
+geopandas
+fiona
+shapely>=2.0.5   # 2.0.4 and older break with numpy 2
+pyproj
+matplotlib
+mplcursors
+contextily       # only for --satellite

@@ -1,2 +1,13 @@
-code/Visualization_animation_V2.py
-Visualization_animation_V4.py
+__pycache__/
+*.pyc
+
+# QGIS/SQLite temp files while a GeoPackage is open
+*.gpkg-wal
+*.gpkg-shm
+*.qgz~
+
+# per-computer paths (see code/its/local_settings.example.py)
+code/its/local_settings.py
+
+# personal experiments
+code/scripts/scratch/
