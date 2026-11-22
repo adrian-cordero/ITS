@@ -55,9 +55,33 @@ The map layers are edited in QGIS (`zone_delimitations.qgz`). `data/maps/` holds
 
 ## Setup
 
+Use a virtual environment, so the project's packages don't clash with other Python installs. The shapely version in particular must match numpy (see `requirements.txt`). Run these commands from the repo root.
+
+**1. Create it** (once):
+
+```bash
+python -m venv .venv
+```
+
+**2. Activate it** (every time you open a new terminal):
+
+| Shell | Command |
+|---|---|
+| Windows PowerShell | `.venv\Scripts\Activate.ps1` |
+| Windows cmd | `.venv\Scripts\activate.bat` |
+| Linux / macOS / WSL | `source .venv/bin/activate` |
+
+Your prompt now starts with `(.venv)`. If PowerShell refuses to run the script, run `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` once, then try again.
+
+**3. Install the packages** (once, and again when `requirements.txt` changes):
+
 ```bash
 pip install -r requirements.txt
 ```
+
+In VS Code, pick the environment with *Python: Select Interpreter* → `.venv`, so the Run button uses it too. Type `deactivate` to leave the environment.
+
+### Data paths
 
 By default everything is read from the repo's `data/` folder.
 

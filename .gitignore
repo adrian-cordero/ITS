@@ -1,6 +1,9 @@
 __pycache__/
 *.pyc
 
+# virtual environment (see README → Setup)
+.venv/
+
 # QGIS/SQLite temp files while a GeoPackage is open
 *.gpkg-wal
 *.gpkg-shm
