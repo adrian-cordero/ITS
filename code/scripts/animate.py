@@ -12,7 +12,7 @@ Animated playback of one trajectory part on the site map.
 Zoom with the mouse wheel or the toolbar (magnifier, pan arrows, house = reset).
 
 Crossing areas (start/end edge + N lines in between) are drawn when
-pick_edges.py has made <layer>_parallel.gpkg.
+pick_edges.py has made crossing_areas.gpkg.
 
 Category codes: 1 car, 2 pedestrian, 3 bicycle, 4 trailer, 5 motorcycle,
 6 truck, 7 bus, 8 scooter, 9 streetcar.
@@ -23,7 +23,7 @@ import argparse
 import _bootstrap  # noqa: F401
 import matplotlib.pyplot as plt
 
-from its.areas import load_crossing_lines, parallel_path
+from its.areas import crossing_areas_path, load_crossing_lines
 from its.config import (
     BICYCLE, CROSSING_LAYER, CROSSING_LINES, DEFAULT_PROJECT_LAYERS, MAPS_DIR, N_PARTS,
     PLOT_CRS, PROJECT_LAYERS,
@@ -88,11 +88,11 @@ def main():
     draw_basemap(ax, load_basemap())
     layer_handles = draw_project_layers(ax, load_project_layers(args.layers))
     if not args.no_crossings:
-        if parallel_path(CROSSING_LAYER).exists():
+        if crossing_areas_path(CROSSING_LAYER).exists():
             lines = load_crossing_lines(CROSSING_LAYER, max(args.lines, 0)).to_crs(PLOT_CRS)
             layer_handles += draw_crossing_lines(ax, lines)
         else:
-            print(f"No crossing areas yet ({parallel_path(CROSSING_LAYER).name} missing): "
+            print(f"No crossing areas yet ({crossing_areas_path(CROSSING_LAYER).name} missing): "
                   "run code/scripts/pick_edges.py")
     if args.satellite:
         add_satellite(ax)

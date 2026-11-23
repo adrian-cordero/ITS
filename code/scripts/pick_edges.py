@@ -39,7 +39,7 @@ straight away.
 
 Saves:
     MAPS_DIR/edge_picks.csv                  the picks (reused by --rebuild)
-    MAPS_DIR/<layer>_parallel.gpkg           layers <layer>_parallel (bands) and <layer>_edges
+    MAPS_DIR/crossing_areas.gpkg             layers crossing_areas (bands) and crossing_edges
 """
 
 import argparse

@@ -1,18 +1,21 @@
 """
-Snapshot events in each crossing's start waiting area, with a photo of
-the waiting area and of the whole intersection at the same moment.
+Snapshot events in each crossing's start waiting area: where every
+cyclist in or near the area is at that moment, with a viewer showing the
+waiting area and the whole intersection.
 
     python code/scripts/snapshot_events.py                    # part 16, both event types
     python code/scripts/snapshot_events.py --view             # also open the viewer
     python code/scripts/snapshot_events.py --types stop --stop-speed 0.2 --stop-duration 1
-    python code/scripts/snapshot_events.py --near 3 --context 60 --no-images
+    python code/scripts/snapshot_events.py --near 3 --context 60 --view
 
 Event types:
     crossing  a cyclist crosses a start line forward (snapshot: its last
               timestep before the line)
     stop      a cyclist inside the start waiting area stays below
               --stop-speed m/s for at least --stop-duration s (snapshot:
-              the start of the stop); only its first stop unless --every-stop
+              the start of the stop); only its first stop unless --every-stop.
+              Recorded once for every crossing starting in that area, each
+              in that crossing's local frame.
 
 The defaults of every option below are set in code/its/config.py
 (EVENT DETECTION); the options override them for one run.
@@ -20,19 +23,23 @@ The defaults of every option below are set in code/its/config.py
 At each snapshot, cyclists are "inside" the waiting area, "near" (within
 --near m of its edge, not inside) or farther away.
 
-Photos have two panels:
+The viewer has two panels and a table:
     left   the waiting area in its own frame (start line on the left, x =
            metres behind the start line, y = along it)
     right  the intersection, --context m around the area: every cyclist,
            coloured inside / near / farther, the --near zone dashed
-
-Viewer: Previous / Next buttons (or left / right keys after clicking the
-window), and a choice of all events, crossings only or stops only.
+    table  the cyclists inside or near: x, y, distance, speed
+Menus: the crossing being analysed (or up / down keys) and the event type
+(start-line crossings or stops). Previous / Next buttons (or left / right
+keys after clicking the window) step through that crossing's events.
+"Show" switches the waiting areas (waiting_areas.gpkg), the crossing
+areas (crossing_areas.gpkg) and the lines across them (as many as in
+animate.py) on and off on both panels.
 
 Writes to results/:
     part<P>_events.csv              one row per event
-    part<P>_event_positions.csv     cyclists inside or near (and the trigger) per event
-    snapshots/part<P>/<type>_NNN.png
+    part<P>_event_positions.csv     cyclists inside or near (and the trigger) per event,
+                                    with their local x, y
 """
 
 import argparse
@@ -42,13 +49,13 @@ import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
-from matplotlib.widgets import Button, RadioButtons
+from matplotlib.widgets import Button, CheckButtons, RadioButtons
 
 from its.analysis.snapshots import snapshot_events
-from its.areas import load_crossing_lines, load_source, parallel_path
+from its.areas import crossing_areas_path, load_crossing_lines, load_source
 from its.config import (
-    BICYCLE, CROSSING_LAYER, EVERY_STOP, MAPS_DIR, METRIC_CRS, N_PARTS, NEAR_DISTANCE,
-    RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
+    BICYCLE, CROSSING_AREAS_LAYER, CROSSING_LAYER, CROSSING_LINES, EVERY_STOP, MAPS_DIR, METRIC_CRS, N_PARTS,
+    NEAR_DISTANCE, RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
 )
 from its.maps import load_basemap
 from its.trajectories import add_metric_coordinates, load_part
@@ -57,12 +64,27 @@ from its.viz.styles import CROSSING_LINE_STYLES
 
 START_COLOR = CROSSING_LINE_STYLES["start"]["color"]
 END_COLOR = CROSSING_LINE_STYLES["end"]["color"]
+MID_STYLE = dict(color=CROSSING_LINE_STYLES["line"]["color"], linewidth=0.8)
 STATUS_STYLE = {
     "inside": dict(color="tab:blue", s=60, label="inside"),
     "near":   dict(color="tab:orange", s=60, label="near, not inside"),
     "far":    dict(color="0.55", s=25, label="farther away"),
 }
 TYPE_LABEL = {"crossing": "start-line crossing", "stop": "stop in waiting area"}
+# map layers the viewer can switch on and off: waiting_areas.gpkg and the
+# crossing bands of crossing_areas.gpkg
+LAYER_STYLE = {
+    "waiting areas":  dict(facecolor="orange", edgecolor="darkorange", linestyle="-"),
+    "crossing areas": dict(facecolor="teal", edgecolor="teal", linestyle="--"),
+}
+
+
+def draw_shape(ax, xs, ys, layer, strong=False, zorder=1):
+    """One polygon outline (xs, ys) in a LAYER_STYLE style; `strong` = the event's own."""
+    st = LAYER_STYLE[layer]
+    ax.fill(xs, ys, color=st["facecolor"], alpha=0.25 if strong else 0.15, zorder=zorder, lw=0)
+    ax.plot(xs, ys, color=st["edgecolor"], linestyle=st["linestyle"],
+            linewidth=2.2 if strong else 1.2, zorder=zorder + 1)
 
 
 # --------------------------------------------------
@@ -72,11 +94,11 @@ TYPE_LABEL = {"crossing": "start-line crossing", "stop": "stop in waiting area"}
 
 def load_crossings(layer, only=None):
     """[{crossing_id, start_area, area_polygon, start_line, end_line}] in METRIC_CRS."""
-    path = parallel_path(layer)
+    path = crossing_areas_path(layer)
     if not path.exists():
         raise SystemExit(f"{path.name} not found: make crossings with pick_edges.py first")
     areas = load_source(layer)
-    bands = gpd.read_file(path, layer=f"{layer}_parallel")
+    bands = gpd.read_file(path, layer=CROSSING_AREAS_LAYER)
     start_area = dict(zip(bands["crossing_id"], bands["start_area"]))
     lines = load_crossing_lines(layer, 0)
     out = []
@@ -94,15 +116,23 @@ def load_crossings(layer, only=None):
 class Scene:
     """Everything the photos need besides the event tables."""
 
-    def __init__(self, df, crossings, areas, near, context):
+    def __init__(self, df, crossings, frames, near, context):
         self.by_time = {t: g for t, g in df.groupby("timestamp")}
         self.crossings = crossings
-        self.areas = areas
+        self.frames = frames
         self.near = near
         self.context = context
         print("Loading the street map...")
         self.basemap = load_basemap(crs=METRIC_CRS)
         self.all_areas = load_source(CROSSING_LAYER)
+        bands = gpd.read_file(crossing_areas_path(CROSSING_LAYER),
+                              layer=CROSSING_AREAS_LAYER).to_crs(METRIC_CRS)
+        self.bands = dict(zip(bands["crossing_id"].astype(int), bands.geometry))
+        lines = load_crossing_lines(CROSSING_LAYER, CROSSING_LINES)    # N per crossing, as animate.py
+        mid = lines[lines["role"] == "line"]
+        self.mid_lines = {int(cid): list(g.geometry) for cid, g in mid.groupby("crossing_id")}
+        # switched in the viewer
+        self.layers = {name: True for name in (*LAYER_STYLE, "crossing lines")}
 
 
 # --------------------------------------------------
@@ -112,22 +142,31 @@ class Scene:
 
 def title_of(ev):
     what = TYPE_LABEL[ev["type"]]
-    where = f"area {ev['area']}"
-    if ev["type"] == "crossing":
-        where += f", crossing #{int(ev['crossing_id'])}"
+    where = f"area {ev['area']}, crossing #{int(ev['crossing_id'])}"
     return (f"Event {ev['event_id']} · {what} · {where}\n"
             f"t = {ev['snapshot_time']:.2f} s · {ev['n_inside']} inside · {ev['n_near']} near")
 
 
-def draw_local(ax, ev, pos, area):
-    """Left panel: the waiting area in its local frame."""
+def draw_local(ax, ev, pos, info, band, mid_lines, layers):
+    """Left panel: the waiting area (and its crossing band) in the crossing's local frame."""
     ax.clear()
-    frame, polygon, crossing = area["frame"], area["polygon"], area["crossing"]
+    frame, polygon, crossing = info["frame"], info["polygon"], info["crossing"]
     px, py = frame.coords_local(polygon)
-    ax.fill(px, py, color="orange", alpha=0.2, zorder=1)
-    ax.plot(px, py, color="darkorange", linewidth=1.5, zorder=2)
     lx, ly = frame.coords_local(crossing["start_line"])
+    xs, ys = [lx], [ly]
+    if layers["waiting areas"]:
+        draw_shape(ax, px, py, "waiting areas", strong=True)
+        xs.append(px)
+        ys.append(py)
+    if layers["crossing areas"] and band is not None:
+        bx, by = frame.coords_local(band)
+        draw_shape(ax, bx, by, "crossing areas", strong=True)
+        xs.append(bx)
+        ys.append(by)
     ax.plot(lx, ly, color=START_COLOR, linewidth=3, zorder=3)
+    if layers["crossing lines"]:
+        for line in mid_lines:
+            ax.plot(*frame.coords_local(line), zorder=3, **MID_STYLE)
 
     for status in ("near", "inside"):
         p = pos[(pos["status"] == status) & ~pos["is_trigger"]]
@@ -138,8 +177,8 @@ def draw_local(ax, ev, pos, area):
         ax.annotate(f"{r.track_id}\n({r.x:.1f}, {r.y:.1f})", (r.x, r.y), textcoords="offset points",
                     xytext=(6, 6), fontsize=7, zorder=7)
 
-    xs = np.r_[px, lx, pos["x"].to_numpy()]
-    ys = np.r_[py, ly, pos["y"].to_numpy()]
+    xs = np.concatenate(xs + [pos["x"].to_numpy()])
+    ys = np.concatenate(ys + [pos["y"].to_numpy()])
     ax.set_xlim(min(0, xs.min()) - 1, max(frame.width, xs.max()) + 1)
     ax.set_ylim(min(0, ys.min()) - 1, max(frame.depth, ys.max()) + 1)
     ax.set_aspect("equal")
@@ -152,14 +191,20 @@ def draw_local(ax, ev, pos, area):
 def draw_intersection(ax, ev, pos, scene):
     """Right panel: the intersection around the area, every cyclist at that moment."""
     ax.clear()
-    area = scene.areas[ev["area"]]
-    polygon = area["polygon"]
+    polygon = scene.frames[ev["crossing_id"]]["polygon"]
     draw_basemap(ax, scene.basemap)
-    scene.all_areas.plot(ax=ax, facecolor="orange", edgecolor="darkorange", alpha=0.25, zorder=4)
-    gpd.GeoSeries([polygon], crs=METRIC_CRS).plot(ax=ax, facecolor="none", edgecolor="darkorange",
-                                                  linewidth=2.5, zorder=5)
+    if scene.layers["waiting areas"]:
+        for i, poly in enumerate(scene.all_areas.geometry):
+            draw_shape(ax, *poly.exterior.xy, "waiting areas", strong=i == ev["area"], zorder=4)
+    if scene.layers["crossing areas"]:
+        for cid, band in scene.bands.items():
+            draw_shape(ax, *band.exterior.xy, "crossing areas", strong=cid == ev["crossing_id"],
+                       zorder=4)
     zone = polygon.buffer(scene.near)
     ax.plot(*zone.exterior.xy, "--", color="tab:orange", linewidth=1.2, zorder=5)
+    if scene.layers["crossing lines"]:
+        for line in (g for gs in scene.mid_lines.values() for g in gs):
+            ax.plot(*line.xy, zorder=6, **MID_STYLE)
     for c in scene.crossings:
         ax.plot(*c["start_line"].xy, color=START_COLOR, linewidth=2.5, zorder=6)
         ax.plot(*c["end_line"].xy, color=END_COLOR, linewidth=2.5, zorder=6)
@@ -187,26 +232,21 @@ def draw_intersection(ax, ev, pos, scene):
                       label=STATUS_STYLE[k]["label"]) for k in ("inside", "near", "far")]
     handles.append(Line2D([], [], marker="*", linestyle="", color="tab:red", markersize=12,
                           label="trigger"))
+    handles += [Line2D([], [], color=st["edgecolor"], linestyle=st["linestyle"], label=name)
+                for name, st in LAYER_STYLE.items() if scene.layers[name]]
+    if scene.layers["crossing lines"]:
+        handles.append(Line2D([], [], label="crossing lines", **MID_STYLE))
     ax.legend(handles=handles, loc="lower right", fontsize=8)
 
 
 def draw_event(fig, ax_local, ax_map, ev, positions, scene):
     pos = positions[positions["event_id"] == ev["event_id"]]
-    draw_local(ax_local, ev, pos, scene.areas[ev["area"]])
+    draw_local(ax_local, ev, pos, scene.frames[ev["crossing_id"]],
+               scene.bands.get(int(ev["crossing_id"])),
+               scene.mid_lines.get(int(ev["crossing_id"]), []), scene.layers)
     draw_intersection(ax_map, ev, pos, scene)
     fig.suptitle(title_of(ev), fontsize=11)
     return pos
-
-
-def save_images(events, positions, scene, folder):
-    folder.mkdir(parents=True, exist_ok=True)
-    for old in folder.glob("*.png"):                 # no photos left over from an earlier run
-        old.unlink()
-    fig, (ax_local, ax_map) = plt.subplots(1, 2, figsize=(15, 7.5))
-    for ev in events.to_dict("records"):
-        draw_event(fig, ax_local, ax_map, ev, positions, scene)
-        fig.savefig(folder / f"{ev['type']}_{ev['event_id']:03d}.png", dpi=110, bbox_inches="tight")
-    plt.close(fig)
 
 
 # --------------------------------------------------
@@ -220,10 +260,14 @@ class EventViewer:
         self.all_events = events.to_dict("records")
         self.positions = positions
         self.scene = scene
-        self.kind = "all"
-        self.events = self.all_events
+        self.kind = "crossing"
+        # every crossing, also those without events: menu label -> crossing_id
+        self.crossing_labels = {f"#{cid} (area {f['area']})": cid
+                                for cid, f in sorted(scene.frames.items())}
+        self.crossing = next(iter(self.crossing_labels.values()))
+        self.events = []
         self.i = 0
-        for key in ("left", "right", "n", "b"):         # free them from matplotlib's toolbar keys
+        for key in ("left", "right", "up", "down", "n", "b"):   # free them from matplotlib's keys
             for name, keys in plt.rcParams.items():
                 if name.startswith("keymap.") and key in keys:
                     keys.remove(key)
@@ -239,15 +283,42 @@ class EventViewer:
         self.next_button = Button(self.fig.add_axes([0.15, 0.04, 0.1, 0.06]), "Next ▶")
         self.prev_button.on_clicked(lambda _e: self.step(-1))
         self.next_button.on_clicked(lambda _e: self.step(+1))
-        self.kind_radio = RadioButtons(self.fig.add_axes([0.30, 0.01, 0.16, 0.12]),
-                                       ("all", "crossing", "stop"))
+        kind_ax = self.fig.add_axes([0.29, 0.01, 0.14, 0.12])
+        kind_ax.set_title("Event type", fontsize=9, loc="left")
+        self.kind_radio = RadioButtons(kind_ax, ("crossing", "stop"))
         self.kind_radio.on_clicked(self.set_kind)
+
+        n = len(self.crossing_labels)
+        crossing_ax = self.fig.add_axes([0.46, 0.01, 0.18, min(0.12, 0.03 * n + 0.02)])
+        crossing_ax.set_title("Crossing", fontsize=9, loc="left")
+        self.crossing_radio = RadioButtons(crossing_ax, tuple(self.crossing_labels))
+        self.crossing_radio.on_clicked(self.set_crossing)
+
+        layers_ax = self.fig.add_axes([0.67, 0.01, 0.14, 0.12])
+        layers_ax.set_title("Show", fontsize=9, loc="left")
+        self.layer_checks = CheckButtons(layers_ax, tuple(scene.layers),
+                                         tuple(scene.layers.values()))
+        self.layer_checks.on_clicked(self.toggle_layer)
+
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
-        self.show()
+        self.refilter()
 
     def set_kind(self, kind):
         self.kind = kind
-        self.events = [e for e in self.all_events if kind == "all" or e["type"] == kind]
+        self.refilter()
+
+    def set_crossing(self, label):
+        self.crossing = self.crossing_labels[label]
+        self.refilter()
+
+    def toggle_layer(self, name):
+        self.scene.layers[name] = not self.scene.layers[name]
+        self.show()                                    # same event, redrawn
+
+    def refilter(self):
+        """Events of the chosen crossing and type, back to the first one."""
+        self.events = [e for e in self.all_events
+                       if e["crossing_id"] == self.crossing and e["type"] == self.kind]
         self.i = 0
         self.show()
 
@@ -261,6 +332,10 @@ class EventViewer:
             self.step(+1)
         elif event.key in ("left", "b"):
             self.step(-1)
+        elif event.key in ("up", "down"):                # previous / next crossing in the menu
+            labels = list(self.crossing_labels)
+            j = labels.index(self.crossing_radio.value_selected)
+            self.crossing_radio.set_active((j + (1 if event.key == "down" else -1)) % len(labels))
 
     def show(self):
         self.table_ax.clear()
@@ -268,12 +343,12 @@ class EventViewer:
         if not self.events:
             self.ax_local.clear()
             self.ax_map.clear()
-            self.fig.suptitle(f"No {self.kind} events")
+            self.fig.suptitle(f"No {self.kind} events for crossing #{self.crossing}")
             self.fig.canvas.draw_idle()
             return
         ev = self.events[self.i]
         pos = draw_event(self.fig, self.ax_local, self.ax_map, ev, self.positions, self.scene)
-        rows = [f"{self.kind} event {self.i + 1} of {len(self.events)}", "",
+        rows = [f"crossing #{self.crossing}: {self.kind} event {self.i + 1} of {len(self.events)}", "",
                 f"{'track':>6} {'x':>6} {'y':>6} {'dist':>5} {'v':>5}  status"]
         for r in pos.sort_values(["status", "x"]).itertuples():
             note = r.status + (" *" if r.is_trigger else "")
@@ -313,7 +388,6 @@ def main():
                         f"(default {SNAPSHOT_CONTEXT:g})")
     p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
                    help="category codes (default 3: cyclists)")
-    p.add_argument("--no-images", action="store_true", help="don't save the photos")
     p.add_argument("--view", action="store_true", help="open the viewer")
     args = p.parse_args()
 
@@ -323,7 +397,7 @@ def main():
     df = add_metric_coordinates(df)
     df["speed"] = np.hypot(df["velocity_x"], df["velocity_y"])
 
-    events, positions, areas = snapshot_events(
+    events, positions, frames = snapshot_events(
         df, crossings, types=args.types, near=args.near, stop_speed=args.stop_speed,
         stop_duration=args.stop_duration, every_stop=args.every_stop)
 
@@ -332,26 +406,21 @@ def main():
     events.to_csv(f"{stem}_events.csv", index=False)
     positions.to_csv(f"{stem}_event_positions.csv", index=False)
 
-    print(f"Part {args.part}: {len(events)} events in start area(s) {sorted(areas)} "
-          f"(maps from {MAPS_DIR})")
+    used = ", ".join(f"#{cid} (area {f['area']})" for cid, f in sorted(frames.items()))
+    print(f"Part {args.part}: {len(events)} events for crossing(s) {used} (maps from {MAPS_DIR})")
     print(f"  stop = below {args.stop_speed} m/s for {args.stop_duration} s; near = within {args.near} m")
     if len(events):
-        print(events.groupby("type").size().to_string())
-        print(events[["event_id", "type", "trigger_track", "snapshot_time", "n_inside",
-                      "n_near"]].to_string(index=False))
+        print(events.groupby(["crossing_id", "type"]).size().to_string())
+        print(events[["event_id", "type", "crossing_id", "trigger_track", "snapshot_time",
+                      "n_inside", "n_near"]].to_string(index=False))
     print(f"Wrote {stem}_events.csv and _event_positions.csv")
 
-    if not len(events) or (args.no_images and not args.view):
+    if not len(events) or not args.view:
         return
-    scene = Scene(df, crossings, areas, args.near, args.context)
-    if not args.no_images:
-        folder = RESULTS_DIR / "snapshots" / f"part{args.part}"
-        save_images(events, positions, scene, folder)
-        print(f"Saved {len(events)} photos in {folder}")
-    if args.view:
-        viewer = EventViewer(events, positions, scene)    # keep it alive while the window is open
-        plt.show()
-        del viewer
+    scene = Scene(df, crossings, frames, args.near, args.context)
+    viewer = EventViewer(events, positions, scene)    # keep it alive while the window is open
+    plt.show()
+    del viewer
 
 
 if __name__ == "__main__":

@@ -170,7 +170,7 @@ In the animation window, use the time slider and the Play/Pause button. Hover ov
 
    `clear` (or `--reset` on the command line) first saves the current picks as `MAPS_DIR/edge_picks_backup_<date>-<time>.csv`, a new file each time. To undo, copy that file over `edge_picks.csv` and run `pick_edges.py --rebuild`.
 2. **Build.** Both edges get length **W**, centred on their original midpoints. W is the crossing's own width if you gave it one (`w <#> <W>`); otherwise it's the default (`--width`, or `CROSSING_WIDTH` in `config.py`). The end edge is turned parallel to the start edge, and the crossing is the four-sided band between them. **L** is the distance between the two edges. The original areas aren't changed.
-3. **Save.** The crossings go into `MAPS_DIR/<layer>_parallel.gpkg`, which you can open in QGIS. It has two layers: the bands, and the start/end lines. The picks are saved in `MAPS_DIR/edge_picks.csv`; use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
+3. **Save.** The crossings go into `MAPS_DIR/crossing_areas.gpkg`, which you can open in QGIS. It has two layers: `crossing_areas` (the bands) and `crossing_edges` (the start/end lines). The picks are saved in `MAPS_DIR/edge_picks.csv`; use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
 
 `animate.py` draws each crossing's start and end edge, plus **N** lines in between. The lines split L into N + 1 equal parts, and each line has length W. N is the crossing's own number if you gave it one (`n <#> <N>` in the menu); otherwise it's the default (`CROSSING_LINES` in `config.py`, or `--lines N` on `animate.py`).
 

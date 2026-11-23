@@ -11,8 +11,8 @@ For each crossing (code/scripts/pick_edges.py does steps 1-3):
      across it has length W. L is the distance between the two edges.
      (If the midpoints are not straight across, the band leans: a
      parallelogram.)
-  3. the bands are saved as <layer>_parallel.gpkg, with an extra layer
-     <layer>_edges holding the start/end lines. The original polygons
+  3. the bands are saved as layer crossing_areas of crossing_areas.gpkg,
+     with an extra layer crossing_edges holding the start/end lines. The original polygons
      are not changed.
   4. crossing_lines() gives N lines between the edges, splitting L into
      N + 1 equal parts (no leftover). Each crossing can have its own N
@@ -36,7 +36,10 @@ import numpy as np
 import pandas as pd
 from shapely.geometry import LineString, Point, Polygon
 
-from its.config import EDGE_PICKS_FILE, MAPS_DIR, METRIC_CRS, PROJECT_LAYERS
+from its.config import (
+    CROSSING_AREAS_FILE, CROSSING_AREAS_LAYER, CROSSING_EDGES_LAYER, EDGE_PICKS_FILE, MAPS_DIR,
+    METRIC_CRS, PROJECT_LAYERS,
+)
 
 # --------------------------------------------------
 # EDGES
@@ -257,38 +260,39 @@ def build_crossings(source: gpd.GeoDataFrame, picks: dict, width: float):
     return bands, edges
 
 
-def parallel_path(layer: str, maps_dir=MAPS_DIR):
-    return maps_dir / f"{layer}_parallel.gpkg"
+def crossing_areas_path(layer: str, maps_dir=MAPS_DIR):
+    """CROSSING_AREAS_FILE: the crossings of `layer` (one layer at a time)."""
+    return maps_dir / CROSSING_AREAS_FILE
 
 
 def save_crossings(layer: str, bands, edges, crs, maps_dir=MAPS_DIR):
-    """Write <layer>_parallel.gpkg (replacing it) with both layers, in `crs`."""
-    path = parallel_path(layer, maps_dir)
+    """Write CROSSING_AREAS_FILE (replacing it) with both layers, in `crs`."""
+    path = crossing_areas_path(layer, maps_dir)
     if path.exists():
         path.unlink()
     if bands.empty:
         return path
-    bands.to_crs(crs).to_file(path, layer=f"{layer}_parallel", driver="GPKG")
-    edges.to_crs(crs).to_file(path, layer=f"{layer}_edges", driver="GPKG")
+    bands.to_crs(crs).to_file(path, layer=CROSSING_AREAS_LAYER, driver="GPKG")
+    edges.to_crs(crs).to_file(path, layer=CROSSING_EDGES_LAYER, driver="GPKG")
     return path
 
 
 def load_crossing_lines(layer: str, n: int, maps_dir=MAPS_DIR) -> gpd.GeoDataFrame:
     """
     Start, end and N in-between lines for every crossing in
-    <layer>_parallel.gpkg, in METRIC_CRS. N is the crossing's own number
+    CROSSING_AREAS_FILE, in METRIC_CRS. N is the crossing's own number
     of lines if it has one, otherwise `n`. Columns: crossing_id, role
     ("start", "line", "end"), index (0 = start ... N + 1 = end), geometry.
     """
-    path = parallel_path(layer, maps_dir)
+    path = crossing_areas_path(layer, maps_dir)
     if not path.exists():
         raise FileNotFoundError(f"{path.name} not found: run code/scripts/pick_edges.py first")
 
-    edges = gpd.read_file(path, layer=f"{layer}_edges").to_crs(METRIC_CRS)
+    edges = gpd.read_file(path, layer=CROSSING_EDGES_LAYER).to_crs(METRIC_CRS)
     key = "crossing_id" if "crossing_id" in edges.columns else "area_id"
 
     own_n = {}
-    bands = gpd.read_file(path, layer=f"{layer}_parallel")
+    bands = gpd.read_file(path, layer=CROSSING_AREAS_LAYER)
     if "lines" in bands.columns and key in bands.columns:
         own_n = {k: int(v) for k, v in zip(bands[key], bands["lines"])
                  if pd.notna(v) and int(v) >= 0}

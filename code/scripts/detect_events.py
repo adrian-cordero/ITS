@@ -24,7 +24,7 @@ import pandas as pd
 
 from its.analysis.crossings import first_forward_per_track, forward_normal, line_crossings
 from its.analysis.occupancy import count_in_areas
-from its.areas import load_crossing_lines, load_source, parallel_path
+from its.areas import crossing_areas_path, load_crossing_lines, load_source
 from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, RESULTS_DIR
 from its.trajectories import add_metric_coordinates, load_part
 
@@ -39,7 +39,7 @@ def detect(part, categories, layer=CROSSING_LAYER):
 
     rows = []
     crossing_ids = []
-    if parallel_path(layer).exists():
+    if crossing_areas_path(layer).exists():
         lines = load_crossing_lines(layer, 0)       # start and end line of every crossing
         crossing_ids = sorted(lines["crossing_id"].unique())
         for cid, grp in lines.groupby("crossing_id"):

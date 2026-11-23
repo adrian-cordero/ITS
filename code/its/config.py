@@ -138,6 +138,13 @@ CROSSING_LINES = 4
 # Picked edges, stored in MAPS_DIR next to the layers.
 EDGE_PICKS_FILE = "edge_picks.csv"
 
+# The crossings built from the picks (pick_edges.py), in MAPS_DIR: a
+# GeoPackage with layers CROSSING_AREAS_LAYER (the bands) and
+# CROSSING_EDGES_LAYER (their start and end lines).
+CROSSING_AREAS_FILE = "crossing_areas.gpkg"
+CROSSING_AREAS_LAYER = "crossing_areas"
+CROSSING_EDGES_LAYER = "crossing_edges"
+
 # --------------------------------------------------
 # EVENT DETECTION (see code/scripts/plot_occupancy.py, snapshot_events.py)
 # --------------------------------------------------

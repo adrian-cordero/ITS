@@ -10,7 +10,9 @@ Event types
               `stop_duration` (s). Snapshot: the first timestep of the
               stop. Unless `every_stop`, only each cyclist's first stop
               per area. Defaults: STOP_SPEED, STOP_DURATION, EVERY_STOP
-              in config.py.
+              in config.py. A stop is recorded once for every crossing
+              that starts in the area, each with positions in that
+              crossing's local frame.
 
 At the snapshot time every cyclist is classed as
     inside    in the waiting area (stay rule of its.analysis.occupancy:
@@ -19,7 +21,8 @@ At the snapshot time every cyclist is classed as
               (default NEAR_DISTANCE in config.py)
     (others are farther away and only appear on the intersection view)
 
-Local frame of a waiting area (metres):
+Local frame of a crossing (its start waiting area seen from its start
+line; crossings sharing a start area each have their own), in metres:
     y  "north": along the start line
     x  north rotated -90 degrees (clockwise): perpendicular to the start
        line, pointing from it back into the waiting area
@@ -167,35 +170,41 @@ def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANC
     crossings  [{"crossing_id", "start_area", "area_polygon", "start_line", "end_line"}]
                in METRIC_CRS. Stops are looked for in each crossing's start area.
 
-    Returns (events, positions, areas) where areas = {area: {"polygon",
-    "frame", "crossing"}} describes every start area used.
+    Every event belongs to one crossing (`crossing_id`); a stop in a start
+    area shared by several crossings appears once per crossing.
+
+    Returns (events, positions, frames) where frames = {crossing_id:
+    {"area", "polygon", "frame", "crossing"}} describes every crossing used.
     """
     d = df.sort_values(["track_id", "timestamp"], kind="stable").reset_index(drop=True)
     by_time = {t: g for t, g in d.groupby("timestamp")}
 
-    areas = {}
-    for c in crossings:                       # first crossing per start area sets its frame
-        if c["start_area"] not in areas:
-            north = forward_normal(c["start_line"], c["end_line"])
-            areas[c["start_area"]] = {"polygon": c["area_polygon"], "crossing": c,
-                                      "frame": local_frame(c["area_polygon"], north),
-                                      "stays": area_stays(d, c["area_polygon"])}
+    stays, frames = {}, {}
+    for c in crossings:
+        area = c["start_area"]
+        if area not in stays:                 # who is inside when: per area, shared
+            stays[area] = area_stays(d, c["area_polygon"])
+        north = forward_normal(c["start_line"], c["end_line"])
+        frames[c["crossing_id"]] = {"area": area, "polygon": c["area_polygon"], "crossing": c,
+                                    "frame": local_frame(c["area_polygon"], north)}
 
     found = []
     if "crossing" in types:
         for c in crossings:
             found += detect_crossing_events(d, c)
     if "stop" in types:
-        for area_id, a in areas.items():
-            found += detect_stop_events(d, area_id, a["polygon"], a["stays"],
-                                        stop_speed, stop_duration, every_stop)
+        for area, area_stay in stays.items():
+            on_area = [c for c in crossings if c["start_area"] == area]
+            stops = detect_stop_events(d, area, on_area[0]["area_polygon"], area_stay,
+                                       stop_speed, stop_duration, every_stop)
+            found += [{**e, "crossing_id": c["crossing_id"]} for e in stops for c in on_area]
 
-    found.sort(key=lambda e: (e["snapshot_time"], e["type"]))
+    found.sort(key=lambda e: (e["snapshot_time"], e["type"], e["crossing_id"]))
     events, positions = [], []
     for event_id, e in enumerate(found):
-        a = areas[e["area"]]
+        f = frames[e["crossing_id"]]
         pos, counts = take_snapshot(by_time[e["snapshot_time"]], e["trigger_track"],
-                                    a["polygon"], a["stays"], a["frame"], near)
+                                    f["polygon"], stays[e["area"]], f["frame"], near)
         pos.insert(0, "event_id", event_id)
         positions.append(pos)
         events.append({"event_id": event_id, **e, **counts})
@@ -203,6 +212,4 @@ def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANC
     events = pd.DataFrame(events, columns=EVENT_COLUMNS)
     positions = (pd.concat(positions, ignore_index=True) if positions
                  else pd.DataFrame(columns=POSITION_COLUMNS))
-    for a in areas.values():
-        a.pop("stays")
-    return events, positions[POSITION_COLUMNS], areas
+    return events, positions[POSITION_COLUMNS], frames
