@@ -153,9 +153,11 @@ CROSSING_EDGES_LAYER = "crossing_edges"
 # Waiting areas ticked when the occupancy plot opens.
 DEFAULT_OCCUPANCY_AREAS = (4, 5, 6, 7)
 
-# Event types snapshot_events.py detects: "crossing" (a start line crossed
-# forward) and/or "stop" (a cyclist stopping in the start waiting area).
-SNAPSHOT_EVENT_TYPES = ("crossing", "stop")
+# Event types snapshot_events.py detects: "start" (a start line crossed
+# forward), "stop" (a cyclist stopping in the start waiting area) and/or
+# "discharge" (a stopped queue released over the crossing's lines; needs
+# start and stop, which are then detected too).
+SNAPSHOT_EVENT_TYPES = ("start", "stop", "discharge")
 
 # A cyclist has stopped when its speed stays below STOP_SPEED (m/s) for at
 # least STOP_DURATION (s). With EVERY_STOP = False only its first stop per
@@ -166,6 +168,12 @@ EVERY_STOP = False
 
 # "Near": not inside the waiting area, but within this many metres of its edge.
 NEAR_DISTANCE = 5.0
+
+# Discharge: a start event is matched to its reference stop, the latest stop
+# event of the same crossing at or before it and at most DISCHARGE_MAX_LAG s
+# earlier. The queue is the cyclists inside the area with speed below
+# STOP_SPEED in that stop's snapshot. One discharge per reference stop.
+DISCHARGE_MAX_LAG = 120.0
 
 # Metres around the waiting area shown on the intersection view of the photos.
 SNAPSHOT_CONTEXT = 40.0

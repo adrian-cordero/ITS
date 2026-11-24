@@ -3,19 +3,30 @@ Snapshot events in each crossing's start waiting area: where every
 cyclist in or near the area is at that moment, with a viewer showing the
 waiting area and the whole intersection.
 
-    python code/scripts/snapshot_events.py                    # part 16, both event types
+    python code/scripts/snapshot_events.py                    # part 16, all event types
     python code/scripts/snapshot_events.py --view             # also open the viewer
     python code/scripts/snapshot_events.py --types stop --stop-speed 0.2 --stop-duration 1
     python code/scripts/snapshot_events.py --near 3 --context 60 --view
 
 Event types:
-    crossing  a cyclist crosses a start line forward (snapshot: its last
+    start     a cyclist crosses a start line forward (snapshot: its last
               timestep before the line)
     stop      a cyclist inside the start waiting area stays below
               --stop-speed m/s for at least --stop-duration s (snapshot:
               the start of the stop); only its first stop unless --every-stop.
               Recorded once for every crossing starting in that area, each
               in that crossing's local frame.
+    discharge a stopped queue released over the crossing's lines. Each
+              start event is matched to its reference stop: the latest stop
+              of the same crossing at or before it, at most --max-lag s
+              earlier. The queue is the cyclists inside with speed below
+              --stop-speed in that stop's snapshot. One discharge per
+              reference stop, triggered by the first matched start event
+              of a queue member (trigger_kind "queue"; earlier rolling
+              starts by others in n_skipped_starts), or by the first
+              matched start event if no member has one ("rolling"); for every queue member, its first forward pass of each
+              line (start, --lines in between, end) after the stop.
+              Needs start and stop, which are then detected too.
 
 The defaults of every option below are set in code/its/config.py
 (EVENT DETECTION); the options override them for one run.
@@ -30,7 +41,7 @@ The viewer has two panels and a table:
            coloured inside / near / farther, the --near zone dashed
     table  the cyclists inside or near: x, y, distance, speed
 Menus: the crossing being analysed (or up / down keys) and the event type
-(start-line crossings or stops). Previous / Next buttons (or left / right
+(start-line crossings or stops; discharges are not shown yet). Previous / Next buttons (or left / right
 keys after clicking the window) step through that crossing's events.
 "Show" switches the waiting areas (waiting_areas.gpkg), the crossing
 areas (crossing_areas.gpkg) and the lines across them (as many as in
@@ -40,77 +51,46 @@ Writes to results/:
     part<P>_events.csv              one row per event
     part<P>_event_positions.csv     cyclists inside or near (and the trigger) per event,
                                     with their local x, y
+    part<P>_discharges.csv          one row per discharge
+    part<P>_discharge_queues.csv    per discharge: its queue members and their snapshot position
+    part<P>_discharge_passes.csv    per discharge, queue member and line: the pass time
 """
 
 import argparse
 
 import _bootstrap  # noqa: F401
-import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 from matplotlib.widgets import Button, CheckButtons, RadioButtons
 
+from its.analysis.discharge import discharge_events
 from its.analysis.snapshots import snapshot_events
-from its.areas import crossing_areas_path, load_crossing_lines, load_source
+from its.areas import load_crossing_lines, load_source
 from its.config import (
-    BICYCLE, CROSSING_AREAS_LAYER, CROSSING_LAYER, CROSSING_LINES, EVERY_STOP, MAPS_DIR, METRIC_CRS, N_PARTS,
+    BICYCLE, CROSSING_LAYER, CROSSING_LINES, DISCHARGE_MAX_LAG, EVERY_STOP,
+    MAPS_DIR, METRIC_CRS, N_PARTS,
     NEAR_DISTANCE, RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
 )
 from its.maps import load_basemap
 from its.trajectories import add_metric_coordinates, load_part
 from its.viz.basemap import draw_basemap
-from its.viz.styles import CROSSING_LINE_STYLES
+from its.viz.events import (
+    END_COLOR, LAYER_STYLE, MID_STYLE, START_COLOR, draw_local_crossing, draw_shape, free_keys,
+    load_bands, load_crossings, load_mid_lines,
+)
 
-START_COLOR = CROSSING_LINE_STYLES["start"]["color"]
-END_COLOR = CROSSING_LINE_STYLES["end"]["color"]
-MID_STYLE = dict(color=CROSSING_LINE_STYLES["line"]["color"], linewidth=0.8)
 STATUS_STYLE = {
     "inside": dict(color="tab:blue", s=60, label="inside"),
     "near":   dict(color="tab:orange", s=60, label="near, not inside"),
     "far":    dict(color="0.55", s=25, label="farther away"),
 }
-TYPE_LABEL = {"crossing": "start-line crossing", "stop": "stop in waiting area"}
-# map layers the viewer can switch on and off: waiting_areas.gpkg and the
-# crossing bands of crossing_areas.gpkg
-LAYER_STYLE = {
-    "waiting areas":  dict(facecolor="orange", edgecolor="darkorange", linestyle="-"),
-    "crossing areas": dict(facecolor="teal", edgecolor="teal", linestyle="--"),
-}
-
-
-def draw_shape(ax, xs, ys, layer, strong=False, zorder=1):
-    """One polygon outline (xs, ys) in a LAYER_STYLE style; `strong` = the event's own."""
-    st = LAYER_STYLE[layer]
-    ax.fill(xs, ys, color=st["facecolor"], alpha=0.25 if strong else 0.15, zorder=zorder, lw=0)
-    ax.plot(xs, ys, color=st["edgecolor"], linestyle=st["linestyle"],
-            linewidth=2.2 if strong else 1.2, zorder=zorder + 1)
+TYPE_LABEL = {"start": "start-line crossing", "stop": "stop in waiting area"}
 
 
 # --------------------------------------------------
 # DATA
 # --------------------------------------------------
-
-
-def load_crossings(layer, only=None):
-    """[{crossing_id, start_area, area_polygon, start_line, end_line}] in METRIC_CRS."""
-    path = crossing_areas_path(layer)
-    if not path.exists():
-        raise SystemExit(f"{path.name} not found: make crossings with pick_edges.py first")
-    areas = load_source(layer)
-    bands = gpd.read_file(path, layer=CROSSING_AREAS_LAYER)
-    start_area = dict(zip(bands["crossing_id"], bands["start_area"]))
-    lines = load_crossing_lines(layer, 0)
-    out = []
-    for cid, grp in lines.groupby("crossing_id"):
-        if only and cid not in only:
-            continue
-        by_role = dict(zip(grp["role"], grp.geometry))
-        a = int(start_area[cid])
-        out.append({"crossing_id": int(cid), "start_area": a,
-                    "area_polygon": areas.geometry.iloc[a],
-                    "start_line": by_role["start"], "end_line": by_role["end"]})
-    return out
 
 
 class Scene:
@@ -125,12 +105,8 @@ class Scene:
         print("Loading the street map...")
         self.basemap = load_basemap(crs=METRIC_CRS)
         self.all_areas = load_source(CROSSING_LAYER)
-        bands = gpd.read_file(crossing_areas_path(CROSSING_LAYER),
-                              layer=CROSSING_AREAS_LAYER).to_crs(METRIC_CRS)
-        self.bands = dict(zip(bands["crossing_id"].astype(int), bands.geometry))
-        lines = load_crossing_lines(CROSSING_LAYER, CROSSING_LINES)    # N per crossing, as animate.py
-        mid = lines[lines["role"] == "line"]
-        self.mid_lines = {int(cid): list(g.geometry) for cid, g in mid.groupby("crossing_id")}
+        self.bands = load_bands(CROSSING_LAYER)
+        self.mid_lines = load_mid_lines(CROSSING_LAYER, CROSSING_LINES)    # N per crossing, as animate.py
         # switched in the viewer
         self.layers = {name: True for name in (*LAYER_STYLE, "crossing lines")}
 
@@ -151,22 +127,8 @@ def draw_local(ax, ev, pos, info, band, mid_lines, layers):
     """Left panel: the waiting area (and its crossing band) in the crossing's local frame."""
     ax.clear()
     frame, polygon, crossing = info["frame"], info["polygon"], info["crossing"]
-    px, py = frame.coords_local(polygon)
-    lx, ly = frame.coords_local(crossing["start_line"])
-    xs, ys = [lx], [ly]
-    if layers["waiting areas"]:
-        draw_shape(ax, px, py, "waiting areas", strong=True)
-        xs.append(px)
-        ys.append(py)
-    if layers["crossing areas"] and band is not None:
-        bx, by = frame.coords_local(band)
-        draw_shape(ax, bx, by, "crossing areas", strong=True)
-        xs.append(bx)
-        ys.append(by)
-    ax.plot(lx, ly, color=START_COLOR, linewidth=3, zorder=3)
-    if layers["crossing lines"]:
-        for line in mid_lines:
-            ax.plot(*frame.coords_local(line), zorder=3, **MID_STYLE)
+    sx, sy = draw_local_crossing(ax, frame, polygon, crossing["start_line"], band, mid_lines,
+                                 layers=layers)
 
     for status in ("near", "inside"):
         p = pos[(pos["status"] == status) & ~pos["is_trigger"]]
@@ -177,8 +139,8 @@ def draw_local(ax, ev, pos, info, band, mid_lines, layers):
         ax.annotate(f"{r.track_id}\n({r.x:.1f}, {r.y:.1f})", (r.x, r.y), textcoords="offset points",
                     xytext=(6, 6), fontsize=7, zorder=7)
 
-    xs = np.concatenate(xs + [pos["x"].to_numpy()])
-    ys = np.concatenate(ys + [pos["y"].to_numpy()])
+    xs = np.concatenate([sx, pos["x"].to_numpy()])
+    ys = np.concatenate([sy, pos["y"].to_numpy()])
     ax.set_xlim(min(0, xs.min()) - 1, max(frame.width, xs.max()) + 1)
     ax.set_ylim(min(0, ys.min()) - 1, max(frame.depth, ys.max()) + 1)
     ax.set_aspect("equal")
@@ -260,17 +222,14 @@ class EventViewer:
         self.all_events = events.to_dict("records")
         self.positions = positions
         self.scene = scene
-        self.kind = "crossing"
+        self.kind = "start"
         # every crossing, also those without events: menu label -> crossing_id
         self.crossing_labels = {f"#{cid} (area {f['area']})": cid
                                 for cid, f in sorted(scene.frames.items())}
         self.crossing = next(iter(self.crossing_labels.values()))
         self.events = []
         self.i = 0
-        for key in ("left", "right", "up", "down", "n", "b"):   # free them from matplotlib's keys
-            for name, keys in plt.rcParams.items():
-                if name.startswith("keymap.") and key in keys:
-                    keys.remove(key)
+        free_keys("left", "right", "up", "down", "n", "b")
 
         self.fig = plt.figure(figsize=(17, 8.5))
         self.ax_local = self.fig.add_axes([0.04, 0.17, 0.30, 0.70])
@@ -285,7 +244,7 @@ class EventViewer:
         self.next_button.on_clicked(lambda _e: self.step(+1))
         kind_ax = self.fig.add_axes([0.29, 0.01, 0.14, 0.12])
         kind_ax.set_title("Event type", fontsize=9, loc="left")
-        self.kind_radio = RadioButtons(kind_ax, ("crossing", "stop"))
+        self.kind_radio = RadioButtons(kind_ax, ("start", "stop"))
         self.kind_radio.on_clicked(self.set_kind)
 
         n = len(self.crossing_labels)
@@ -371,7 +330,7 @@ def main():
     p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
                    help="trajectory part (default 16)")
     p.add_argument("--types", nargs="+", default=list(SNAPSHOT_EVENT_TYPES),
-                   choices=["crossing", "stop"],
+                   choices=["start", "stop", "discharge"],
                    help=f"event types to detect (default {' '.join(SNAPSHOT_EVENT_TYPES)})")
     p.add_argument("--crossings", type=int, nargs="+", metavar="ID",
                    help="only these crossings and their start areas (default: all)")
@@ -383,6 +342,12 @@ def main():
                    help=f"how long the speed must stay below it, s (default {STOP_DURATION:g})")
     p.add_argument("--every-stop", action=argparse.BooleanOptionalAction, default=EVERY_STOP,
                    help="record every stop, not only each cyclist's first per area")
+    p.add_argument("--max-lag", type=float, default=DISCHARGE_MAX_LAG,
+                   help=f"longest time from a reference stop to its start event, s "
+                        f"(default {DISCHARGE_MAX_LAG:g})")
+    p.add_argument("--lines", type=int, default=CROSSING_LINES,
+                   help=f"lines between start and end line for discharges, unless a crossing "
+                        f"has its own (default {CROSSING_LINES})")
     p.add_argument("--context", type=float, default=SNAPSHOT_CONTEXT,
                    help=f"metres around the area shown on the intersection view "
                         f"(default {SNAPSHOT_CONTEXT:g})")
@@ -397,8 +362,9 @@ def main():
     df = add_metric_coordinates(df)
     df["speed"] = np.hypot(df["velocity_x"], df["velocity_y"])
 
+    types = set(args.types) | ({"start", "stop"} if "discharge" in args.types else set())
     events, positions, frames = snapshot_events(
-        df, crossings, types=args.types, near=args.near, stop_speed=args.stop_speed,
+        df, crossings, types=types, near=args.near, stop_speed=args.stop_speed,
         stop_duration=args.stop_duration, every_stop=args.every_stop)
 
     RESULTS_DIR.mkdir(exist_ok=True)
@@ -414,6 +380,21 @@ def main():
         print(events[["event_id", "type", "crossing_id", "trigger_track", "snapshot_time",
                       "n_inside", "n_near"]].to_string(index=False))
     print(f"Wrote {stem}_events.csv and _event_positions.csv")
+
+    if "discharge" in args.types:
+        lines = load_crossing_lines(CROSSING_LAYER, args.lines)
+        lines = lines[lines["crossing_id"].isin(frames)]
+        discharges, queues, passes = discharge_events(df, events, positions, lines, args.stop_speed,
+                                              args.max_lag)
+        discharges.to_csv(f"{stem}_discharges.csv", index=False)
+        queues.to_csv(f"{stem}_discharge_queues.csv", index=False)
+        passes.to_csv(f"{stem}_discharge_passes.csv", index=False)
+        print(f"{len(discharges)} discharges (reference stop at most {args.max_lag:g} s "
+              f"before the start event):")
+        if len(discharges):
+            print(discharges.drop(columns=["area", "stop_time"]).to_string(index=False))
+        print(f"Wrote {stem}_discharges.csv, _discharge_queues.csv and _discharge_passes.csv "
+              f"(view them with view_discharges.py)")
 
     if not len(events) or not args.view:
         return

@@ -17,12 +17,15 @@ ITS/
 │   │   ├── analysis/
 │   │   │   ├── occupancy.py  Road users inside each area per timestep
 │   │   │   ├── crossings.py  Line crossings with direction and interpolated time
+│   │   │   ├── snapshots.py  Start and stop events with snapshots of the waiting area
+│   │   │   ├── discharge.py  Discharges: a stopped queue released over a crossing's lines
 │   │   │   └── queues.py     Jam density, discharge rate
 │   │   └── viz/
 │   │       ├── styles.py     All colours and line styles
 │   │       ├── basemap.py    Draw the map and project layers
 │   │       ├── frames.py     Precompute per-timestamp frames
 │   │       ├── player.py     AnimationPlayer: dots, slider, play button, hover
+│   │       ├── events.py     Crossings in the local frame, shared by the event viewers
 │   │       ├── count_graph.py, legends.py, static.py
 │   └── scripts/              What you run (see Usage)
 ├── results/                  Output of detect_events.py
@@ -138,10 +141,16 @@ python code/scripts/detect_events.py --part 16
 python code/scripts/plot_occupancy.py
 python code/scripts/plot_occupancy.py --areas 0 1 4
 
-# Snapshot events in a crossing's start waiting area: start-line crossings and cyclists stopping
+# Snapshot events in a crossing's start waiting area: start-line crossings ("start"), cyclists
+# stopping ("stop") and queues released over the crossing's lines ("discharge")
 # (tables + a photo of the area and the whole intersection per event; --view steps through them)
 python code/scripts/snapshot_events.py --view
 python code/scripts/snapshot_events.py --near 5 --stop-speed 0.1 --stop-duration 0.5
+python code/scripts/snapshot_events.py --types discharge --max-lag 90 --lines 4
+
+# Discharge viewer (reads the CSVs above): queue & paths, time–distance, start-line headways
+python code/scripts/view_discharges.py
+python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
 
 # Rebuild the Parquet files from the original CSVs
 python code/scripts/csv_to_parquet.py "path/to/Trajectory Data"
@@ -176,9 +185,23 @@ In the animation window, use the time slider and the Play/Pause button. Hover ov
 
 Picks are linked to areas by their order in the layer's file. If you delete or reorder areas in QGIS, pick again.
 
+## Event naming
+
+| Term | Meaning |
+|---|---|
+| crossing | The area/band from a start line to an end line (`crossing_id`). Never an event. |
+| line | One of the crossing's N + 2 lines: `line_index` 0 = start, 1 … N in between, N + 1 = end |
+| start event | A cyclist's first forward pass of a start line (`type = "start"`) |
+| stop event | A cyclist staying below `STOP_SPEED` for `STOP_DURATION` in the start waiting area (`type = "stop"`) |
+| reference stop | The latest stop event of the same crossing at or before a start event, at most `DISCHARGE_MAX_LAG` s earlier |
+| queue | Cyclists inside the area with speed below `STOP_SPEED` in the reference stop's snapshot (`queue_position` 1 = nearest the start line) |
+| discharge | One queue per reference stop. `trigger_kind = "queue"`: triggered by the first matched start event of a queue member (earlier rolling starts in `n_skipped_starts`). `"rolling"`: no queue member has a matched start event, so the first matched start event (a rolling start) triggers it. |
+| discharge pass | A queue member's first forward pass of a line after the reference stop |
+
 ## Status
 
 - [x] Convert the data to Parquet
 - [x] Visualise and animate trajectories on the site map, with waiting and merge areas
 - [x] Cyclists per waiting area per timestep, start/end line crossings (`detect_events.py`)
+- [x] Start, stop and discharge events (`snapshot_events.py`)
 - [ ] Jam density and discharge rate per event

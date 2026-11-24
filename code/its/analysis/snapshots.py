@@ -2,9 +2,10 @@
 Snapshot events in a crossing's start waiting area.
 
 Event types
-    crossing  a cyclist crosses the crossing's start line forward
+    start     a cyclist crosses the crossing's start line forward
               (start -> end); each cyclist once per line. Snapshot: its
-              last timestep before the line.
+              last timestep before the line. (A "crossing" is only ever
+              the area / band, never an event.)
     stop      a cyclist inside the start waiting area slows below
               `stop_speed` (m/s) and stays below it for at least
               `stop_duration` (s). Snapshot: the first timestep of the
@@ -96,7 +97,7 @@ def local_frame(area, forward) -> LocalFrame:
 # --------------------------------------------------
 
 
-def detect_crossing_events(d, crossing):
+def detect_start_events(d, crossing):
     north = forward_normal(crossing["start_line"], crossing["end_line"])
     triggers = first_forward_per_track(line_crossings(d, crossing["start_line"], north))
     rows = []
@@ -105,7 +106,7 @@ def detect_crossing_events(d, crossing):
         before = times[times < trig.time]
         if before.empty:
             continue
-        rows.append({"type": "crossing", "area": crossing["start_area"],
+        rows.append({"type": "start", "area": crossing["start_area"],
                      "crossing_id": crossing["crossing_id"], "trigger_track": trig.track_id,
                      "event_time": trig.time, "snapshot_time": before.max()})
     return rows
@@ -189,9 +190,9 @@ def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANC
                                     "frame": local_frame(c["area_polygon"], north)}
 
     found = []
-    if "crossing" in types:
+    if "start" in types:
         for c in crossings:
-            found += detect_crossing_events(d, c)
+            found += detect_start_events(d, c)
     if "stop" in types:
         for area, area_stay in stays.items():
             on_area = [c for c in crossings if c["start_area"] == area]
