@@ -42,6 +42,7 @@ DISCHARGE_COLUMNS = ["discharge_id", "crossing_id", "area", "n_lines", "stop_eve
                      "n_start_events", "n_queue", "n_reached_start", "n_reached_end"]
 QUEUE_COLUMNS = ["discharge_id", "track_id", "queue_position", "x", "y", "utm_x", "utm_y",
                  "speed"]
+_NO_POSITIONS = pd.DataFrame(columns=["track_id", "status", "x", "y", "utm_x", "utm_y", "speed"])
 PASS_COLUMNS = ["discharge_id", "crossing_id", "track_id", "queue_position", "line_index",
                 "line_role", "time", "time_since_release", "x", "y"]
 
@@ -70,9 +71,13 @@ def queue_members(positions, stop_event_id, stop_speed):
     """
     The queue of one stop event: track_id, queue_position (1 = nearest the
     start line) and its snapshot position (local x, y, utm_x, utm_y) and speed.
+    `positions` may also be {event_id: that event's positions}.
     """
-    p = positions[(positions["event_id"] == stop_event_id) & (positions["status"] == "inside")
-                  & (positions["speed"] < stop_speed)].sort_values("x")
+    if isinstance(positions, dict):
+        p = positions.get(stop_event_id, _NO_POSITIONS)
+    else:
+        p = positions[positions["event_id"] == stop_event_id]
+    p = p[(p["status"] == "inside") & (p["speed"] < stop_speed)].sort_values("x")
     q = p[["track_id", "x", "y", "utm_x", "utm_y", "speed"]].reset_index(drop=True)
     q.insert(1, "queue_position", np.arange(1, len(q) + 1))
     return q
@@ -113,9 +118,10 @@ def discharge_events(df, events, positions, crossing_lines, stop_speed, max_lag)
     discharges, passes, queue_rows = [], [], []
     queues = {}
     found = []
+    by_event = {k: g for k, g in positions.groupby("event_id")}
     for stop_id, grp in matched.groupby("stop_event_id"):
         grp = grp.sort_values("event_time")
-        q = queue_members(positions, stop_id, stop_speed)
+        q = queue_members(by_event, stop_id, stop_speed)
         in_queue = grp["trigger_track"].isin(q["track_id"]).to_numpy()
         first = int(np.argmax(in_queue)) if in_queue.any() else 0
         found.append((grp.iloc[first], stop_id, grp, q, bool(in_queue.any()), first))

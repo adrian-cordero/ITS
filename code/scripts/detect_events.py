@@ -26,13 +26,13 @@ from its.analysis.crossings import first_forward_per_track, forward_normal, line
 from its.analysis.occupancy import count_in_areas
 from its.areas import crossing_areas_path, load_crossing_lines, load_source
 from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, RESULTS_DIR
-from its.trajectories import add_metric_coordinates, load_part
+from its.trajectories import add_metric_coordinates, frame_timestamps, load_part
 
 
 def detect(part, categories, layer=CROSSING_LAYER):
-    df = load_part(part, columns=["timestamp", "category", "track_id"])
-    timestamps = df["timestamp"].unique()          # every frame, also those without cyclists
-    df = add_metric_coordinates(df[df["category"].isin(categories)].copy())
+    timestamps = frame_timestamps(part)            # every frame, also those without cyclists
+    df = add_metric_coordinates(load_part(part, categories=categories,
+                                          columns=["timestamp", "category", "track_id"]))
 
     areas = load_source(layer)
     occupancy = count_in_areas(df, areas.geometry, timestamps)

@@ -34,16 +34,16 @@ from matplotlib.widgets import CheckButtons
 from its.analysis.occupancy import area_events, count_in_areas, event_counts
 from its.areas import load_source
 from its.config import BICYCLE, CATEGORY_NAMES, DEFAULT_OCCUPANCY_AREAS, MAPS_DIR, N_PARTS
-from its.trajectories import add_metric_coordinates, load_part
+from its.trajectories import add_metric_coordinates, frame_timestamps, load_part
 from its.viz.interaction import enable_scroll_zoom
 
 AREA_LAYER = "waiting_areas"
 
 
 def compute(part, categories):
-    df = load_part(part, columns=["timestamp", "category", "track_id"])
-    timestamps = df["timestamp"].unique()          # every frame, also those without cyclists
-    df = add_metric_coordinates(df[df["category"].isin(categories)].copy())
+    timestamps = frame_timestamps(part)            # every frame, also those without cyclists
+    df = add_metric_coordinates(load_part(part, categories=categories,
+                                          columns=["timestamp", "category", "track_id"]))
     areas = load_source(AREA_LAYER).geometry
     occupancy = count_in_areas(df, areas, timestamps)
     counts = event_counts(area_events(df, areas), len(areas)).set_index("area")

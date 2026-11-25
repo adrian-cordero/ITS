@@ -6,10 +6,17 @@ crossing's lines. It only reads results; detect them first with
     python code/scripts/view_discharges.py                  # part 16, queue discharges
     python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
 
-Reads from results/:
-    part<P>_discharges.csv, _discharge_queues.csv, _discharge_passes.csv
-    part<P>_event_positions.csv   (the other cyclists at the reference stop)
-and the part's trajectories, for the paths.
+    python code/scripts/snapshot_events.py --part all       # the whole recording
+    python code/scripts/view_discharges.py --part all --min-bikes 4   # queues of 4 or more
+
+--part must match the snapshot_events.py run (16, 14-18 or all).
+--min-bikes N only shows discharges with at least N cyclists in the queue
+(n_queue >= N; the "min bikes" box changes it in the window).
+
+Reads from results/, as <S> = part16, part14-18 or all:
+    <S>_discharges.csv, _discharge_queues.csv, _discharge_passes.csv
+    <S>_event_positions.csv   (the other cyclists at the reference stop)
+and the parts' trajectories, for the paths.
 
 Panels, in the order the discharge happens:
     queue & paths   (top left) the waiting area and crossing in the local
@@ -28,8 +35,8 @@ Panels, in the order the discharge happens:
     table           (right) per member: start / end pass time and headway.
 Each member has the same colour in every panel.
 
-Menus: the crossing (or up / down keys) and the kind (queue / rolling /
-all). Previous / Next (or left / right keys) step through the discharges.
+Menus: the crossing (or up / down keys), the kind (queue / rolling /
+all) and the smallest queue shown ("min bikes", Enter to apply). Previous / Next (or left / right keys) step through the discharges.
 "Show" switches the paths, the lines between start and end and the other
 cyclists on and off.
 """
@@ -40,13 +47,13 @@ import _bootstrap  # noqa: F401
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.widgets import Button, CheckButtons, RadioButtons
+from matplotlib.widgets import Button, CheckButtons, RadioButtons, TextBox
 
 from its.analysis.crossings import forward_normal
 from its.analysis.snapshots import local_frame
 from its.areas import crossing_length
-from its.config import BICYCLE, CROSSING_LAYER, N_PARTS, RESULTS_DIR
-from its.trajectories import add_metric_coordinates, load_part
+from its.config import BICYCLE, CROSSING_LAYER, DISCHARGE_MIN_BIKES, N_PARTS, RESULTS_DIR
+from its.trajectories import add_metric_coordinates, load_parts, parse_parts, parts_label
 from its.viz.events import (
     END_COLOR, MID_STYLE, START_COLOR, draw_local_crossing, free_keys, load_bands,
     load_crossings, mid_lines_of,
@@ -71,20 +78,24 @@ def member_colors(n):
 # --------------------------------------------------
 
 
-def read_results(part):
-    stem = RESULTS_DIR / f"part{part}"
+def read_results(label, part_arg):
+    """The discharge CSVs of one snapshot_events.py run (label: part16, part14-18, all)."""
     names = ("discharges", "discharge_queues", "discharge_passes", "event_positions")
-    missing = [n for n in names if not (RESULTS_DIR / f"part{part}_{n}.csv").exists()]
+    missing = [n for n in names if not (RESULTS_DIR / f"{label}_{n}.csv").exists()]
     if missing:
-        raise SystemExit(f"{', '.join(f'part{part}_{n}.csv' for n in missing)} not found in "
-                         f"{RESULTS_DIR}: run snapshot_events.py --part {part} first")
-    return [pd.read_csv(f"{stem}_{n}.csv") for n in names]
+        raise SystemExit(f"{', '.join(f'{label}_{n}.csv' for n in missing)} not found in "
+                         f"{RESULTS_DIR}: run snapshot_events.py --part {part_arg} first")
+    out = [pd.read_csv(RESULTS_DIR / f"{label}_{n}.csv") for n in names]
+    if "part" not in out[0]:
+        raise SystemExit(f"{label}_discharges.csv is from an older version: "
+                         f"rerun snapshot_events.py --part {part_arg}")
+    return out
 
 
 class Scene:
     """Everything the panels need: crossings in their local frames and the tracks."""
 
-    def __init__(self, part, categories, discharges, queues, passes, positions):
+    def __init__(self, parts, categories, discharges, queues, passes, positions):
         self.discharges = discharges
         self.queues = {k: g for k, g in queues.groupby("discharge_id")}
         self.passes = {k: g for k, g in passes.groupby("discharge_id")}
@@ -104,7 +115,8 @@ class Scene:
 
         print("Loading the trajectories...")
         tracks = set(queues["track_id"])
-        df = load_part(part, categories=categories, columns=["timestamp", "category", "track_id"])
+        df = load_parts(parts, categories=categories,
+                        columns=["timestamp", "category", "track_id"])
         df = add_metric_coordinates(df[df["track_id"].isin(tracks)].copy())
         self.tracks = {t: g.sort_values("timestamp") for t, g in df.groupby("track_id")}
         self.layers = {"paths": True, "crossing lines": True, "other cyclists": True}
@@ -260,6 +272,7 @@ def table_text(d, members, hw, i, n):
     end_index = d["n_lines"] + 1
     headway = {m["track"]: h for m, h in hw}
     rows = [f"discharge {i + 1} of {n}", "",
+            f"part      {d['part']}",
             f"kind      {d['trigger_kind']}",
             f"trigger   {d['trigger_track']} (event {d['trigger_event_id']})"
             + ("" if d["trigger_in_queue"] else "\n          rolling start, not queued"),
@@ -290,10 +303,11 @@ def table_text(d, members, hw, i, n):
 
 class DischargeViewer:
 
-    def __init__(self, scene, kind="queue"):
+    def __init__(self, scene, kind="queue", min_bikes=DISCHARGE_MIN_BIKES):
         self.scene = scene
         self.all = scene.discharges.sort_values("release_time").to_dict("records")
         self.kind = kind
+        self.min_bikes = min_bikes
         self.crossing_labels = {f"#{cid} (area {c['start_area']})": cid
                                 for cid, c in sorted(scene.crossings.items())}
         self.crossing = next(iter(self.crossing_labels.values()))
@@ -329,7 +343,19 @@ class DischargeViewer:
                                          tuple(scene.layers.values()))
         self.layer_checks.on_clicked(self.toggle_layer)
 
+        self.min_box = TextBox(self.fig.add_axes([0.87, 0.04, 0.05, 0.05]), "min bikes ",
+                               initial=str(min_bikes))
+        self.min_box.on_submit(self.set_min_bikes)
+
         self.fig.canvas.mpl_connect("key_press_event", self.on_key)
+        self.refilter()
+
+    def set_min_bikes(self, text):
+        try:
+            self.min_bikes = max(0, int(text))
+        except ValueError:                      # not a number: put the last value back
+            self.min_box.set_val(str(self.min_bikes))
+            return
         self.refilter()
 
     def set_kind(self, kind):
@@ -346,7 +372,8 @@ class DischargeViewer:
 
     def refilter(self):
         self.items = [d for d in self.all if d["crossing_id"] == self.crossing
-                      and (self.kind == "all" or d["trigger_kind"] == self.kind)]
+                      and (self.kind == "all" or d["trigger_kind"] == self.kind)
+                      and d["n_queue"] >= self.min_bikes]
         self.i = 0
         self.show()
 
@@ -356,6 +383,8 @@ class DischargeViewer:
         self.show()
 
     def on_key(self, event):
+        if self.min_box.capturekeystrokes:          # typing in the "min bikes" box
+            return
         if event.key in ("right", "n"):
             self.step(+1)
         elif event.key in ("left", "b"):
@@ -372,7 +401,8 @@ class DischargeViewer:
             for ax in (self.ax_queue, self.ax_td, self.ax_hw):
                 ax.clear()
             what = "" if self.kind == "all" else f"{self.kind} "
-            self.fig.suptitle(f"No {what}discharges for crossing #{self.crossing}")
+            self.fig.suptitle(f"No {what}discharges with at least {self.min_bikes} bike(s) "
+                              f"for crossing #{self.crossing}")
             self.fig.canvas.draw_idle()
             return
         d = self.items[self.i]
@@ -383,7 +413,8 @@ class DischargeViewer:
         draw_headways(self.ax_hw, hw)
         self.table_ax.text(0, 1, table_text(d, members, hw, self.i, len(self.items)), va="top",
                            family="monospace", fontsize=8)
-        self.fig.suptitle(f"Discharge {d['discharge_id']} · {d['trigger_kind']} · crossing "
+        self.fig.suptitle(f"Discharge {d['discharge_id']} · part {d['part']} · "
+                          f"{d['trigger_kind']} · crossing "
                           f"#{d['crossing_id']} (area {d['area']}) · release t = "
                           f"{d['release_time']:.2f} s · {d['n_queue']} in queue", fontsize=11)
         self.fig.canvas.draw_idle()
@@ -397,22 +428,33 @@ class DischargeViewer:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
-                   help="trajectory part (default 16)")
+    p.add_argument("--part", default="16", metavar="P",
+                   help=f"the snapshot_events.py run to show: a part (16), a range (14-18) "
+                        f"or 'all' (1-{N_PARTS}); default 16")
+    p.add_argument("--min-bikes", type=int, default=DISCHARGE_MIN_BIKES, metavar="N",
+                   help=f"only discharges with at least N cyclists in the queue "
+                        f"(default {DISCHARGE_MIN_BIKES}: all)")
     p.add_argument("--kind", choices=KINDS, default="queue",
                    help="discharges shown first (default queue; the menu switches)")
     p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
                    help="category codes the discharges were detected for (default 3: cyclists)")
     args = p.parse_args()
+    try:
+        parts = parse_parts(args.part)
+    except ValueError as e:
+        p.error(f"--part {e}")
+    label = parts_label(parts)
 
-    discharges, queues, passes, positions = read_results(args.part)
+    discharges, queues, passes, positions = read_results(label, args.part)
     if discharges.empty:
-        raise SystemExit(f"part{args.part}_discharges.csv has no discharges")
-    scene = Scene(args.part, args.categories, discharges, queues, passes, positions)
-    print(f"Part {args.part}: {len(discharges)} discharges "
+        raise SystemExit(f"{label}_discharges.csv has no discharges")
+    shown = discharges[discharges["n_queue"] >= args.min_bikes]
+    print(f"{label}: {len(discharges)} discharges "
           f"({(discharges['trigger_kind'] == 'queue').sum()} queue, "
-          f"{(discharges['trigger_kind'] == 'rolling').sum()} rolling)")
-    viewer = DischargeViewer(scene, args.kind)    # keep it alive while the window is open
+          f"{(discharges['trigger_kind'] == 'rolling').sum()} rolling); "
+          f"{len(shown)} with at least {args.min_bikes} bike(s) in the queue")
+    scene = Scene(parts, args.categories, discharges, queues, passes, positions)
+    viewer = DischargeViewer(scene, args.kind, args.min_bikes)    # keep it alive while the window is open
     plt.show()
     del viewer
 

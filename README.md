@@ -7,12 +7,12 @@ Course project for Intelligent Transport Systems (KU Leuven, 2026–2027). It an
 ```
 ITS/
 ├── data/
-│   ├── parquet/              Trajectories: tumdot_muc_part_1 … _22.parquet
+│   ├── parquet/              Trajectories: tumdot_muc_part_1 … _22.parquet, and tumdot_muc_bicycles.parquet
 │   └── maps/                 Rheinstrasse_osm.osm (base map), waiting/merge areas (.gpkg), QGIS projects
 ├── code/
 │   ├── its/                  Shared library. Importing it never opens a window or loads data.
 │   │   ├── config.py         Paths, coordinate systems, categories, which map layers exist, stop/exit lines
-│   │   ├── trajectories.py   load_part(), tracks(), counts_per_time()
+│   │   ├── trajectories.py   load_part(), load_bicycles(), frame_timestamps(), tracks(), counts_per_time()
 │   │   ├── maps.py           load_basemap(), load_project_layers()
 │   │   ├── analysis/
 │   │   │   ├── occupancy.py  Road users inside each area per timestep
@@ -52,6 +52,23 @@ Each Parquet file holds one part of the TUMDOT-MUC trajectory export (about 500k
 | `rotation_x/y/z` | Orientation |
 | `velocity_x/y/z`, `acceleration_x/y/z` | Motion |
 | `interpolated` | 1 if the point was interpolated |
+
+The 22 parts are consecutive 600 s slices of one recording (part 1 starts at −313 s, part 22 ends at 12 881 s), and track IDs carry on across them: a road user near the end of a part usually continues in the next one.
+
+**Bicycle file.** `tumdot_muc_bicycles.parquet` holds the cyclists of all 22 parts in one file (3.2 M rows, 56 MB): sorted by time, with a `part` column, and only the columns in `BICYCLE_COLUMNS` (`config.py`). `load_part()` reads cyclist-only requests from it automatically, and everything else from the part files, which stay the original data. `load_bicycles()` reads several parts, or the whole recording, in one go. To keep another column, add it to `BICYCLE_COLUMNS` and rebuild:
+
+```bash
+python code/scripts/build_combined.py
+```
+
+The same script makes other combined files, e.g. with more road-user types or columns. Those get their own name, and an existing file is never replaced without `--overwrite`. Read one with `load_combined(path, parts=..., categories=...)`.
+
+```bash
+python code/scripts/build_combined.py --list                                   # categories and columns
+python code/scripts/build_combined.py --categories 3 8                         # tumdot_muc_bicycle_scooter.parquet
+python code/scripts/build_combined.py --add-columns dimension_x dimension_y    # tumdot_muc_bicycles_9cols.parquet
+python code/scripts/build_combined.py --categories all --columns all --output some/file.parquet
+```
 
 Web Mercator distorts sizes: at Munich's latitude, lengths are about 1.5× and areas about 2.2× their real value. Use `translation_x/y` (UTM, in metres) for distances, speeds and areas.
 
@@ -152,8 +169,13 @@ python code/scripts/snapshot_events.py --types discharge --max-lag 90 --lines 4
 python code/scripts/view_discharges.py
 python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
 
-# Rebuild the Parquet files from the original CSVs
+# The whole recording (or a range of parts) as one timeline, then only queues of 4+ cyclists
+python code/scripts/snapshot_events.py --part all       # ~20 s; also --part 14-18
+python code/scripts/view_discharges.py --part all --min-bikes 4
+
+# Rebuild the Parquet files from the original CSVs, then the bicycle file
 python code/scripts/csv_to_parquet.py "path/to/Trajectory Data"
+python code/scripts/build_combined.py
 ```
 
 In the animation window, use the time slider and the Play/Pause button. Hover over a dot to see its track ID and category.
@@ -184,6 +206,12 @@ In the animation window, use the time slider and the Play/Pause button. Hover ov
 `animate.py` draws each crossing's start and end edge, plus **N** lines in between. The lines split L into N + 1 equal parts, and each line has length W. N is the crossing's own number if you gave it one (`n <#> <N>` in the menu); otherwise it's the default (`CROSSING_LINES` in `config.py`, or `--lines N` on `animate.py`).
 
 Picks are linked to areas by their order in the layer's file. If you delete or reorder areas in QGIS, pick again.
+
+### Several parts at once
+
+`--part` on `snapshot_events.py` and `view_discharges.py` takes one part (`16`), a range (`14-18`) or `all`. A range is detected as one timeline, so a queue that stops in one part and leaves in the next is still one discharge, and a cyclist who is already standing still when a part begins isn't counted as a new stop. The results go to `results/<S>_*.csv` with `<S>` = `part16`, `part14-18` or `all`. Event and discharge IDs run over the whole selection, and a `part` column says which part each event (snapshot time) or discharge (release time) falls in. Run the viewer with the same `--part` as the detection.
+
+`--min-bikes N` (or the viewer's "min bikes" box, Enter to apply) only shows discharges with at least N cyclists in the queue (`n_queue >= N`). The default is `DISCHARGE_MIN_BIKES` in `config.py` (1: all). The CSVs always keep every discharge.
 
 ## Event naming
 

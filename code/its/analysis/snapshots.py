@@ -97,14 +97,18 @@ def local_frame(area, forward) -> LocalFrame:
 # --------------------------------------------------
 
 
-def detect_start_events(d, crossing):
+def detect_start_events(d, crossing, track_rows=None):
+    """track_rows: d.groupby("track_id").indices, if already computed."""
     north = forward_normal(crossing["start_line"], crossing["end_line"])
     triggers = first_forward_per_track(line_crossings(d, crossing["start_line"], north))
+    if track_rows is None:
+        track_rows = d.groupby("track_id").indices
+    t = d["timestamp"].to_numpy()
     rows = []
     for trig in triggers.itertuples():
-        times = d.loc[d["track_id"] == trig.track_id, "timestamp"]
+        times = t[track_rows[trig.track_id]]
         before = times[times < trig.time]
-        if before.empty:
+        if not len(before):
             continue
         rows.append({"type": "start", "area": crossing["start_area"],
                      "crossing_id": crossing["crossing_id"], "trigger_track": trig.track_id,
@@ -137,6 +141,21 @@ def detect_stop_events(d, area_id, polygon, stays, stop_speed, stop_duration, ev
 # --------------------------------------------------
 # SNAPSHOTS
 # --------------------------------------------------
+
+
+class TimeIndex:
+    """The rows of one timestep, looked up on demand: `index[t]` (a frame
+    per timestep up front is slow and large for a whole recording)."""
+
+    def __init__(self, df):
+        self.d = df.sort_values("timestamp", kind="stable")
+        self.t = self.d["timestamp"].to_numpy()
+
+    def __getitem__(self, t):
+        lo, hi = np.searchsorted(self.t, t, "left"), np.searchsorted(self.t, t, "right")
+        if lo == hi:
+            raise KeyError(t)
+        return self.d.iloc[lo:hi]
 
 
 def take_snapshot(here, trigger_track, polygon, stays, frame, near):
@@ -178,7 +197,7 @@ def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANC
     {"area", "polygon", "frame", "crossing"}} describes every crossing used.
     """
     d = df.sort_values(["track_id", "timestamp"], kind="stable").reset_index(drop=True)
-    by_time = {t: g for t, g in d.groupby("timestamp")}
+    by_time = TimeIndex(d)
 
     stays, frames = {}, {}
     for c in crossings:
@@ -191,8 +210,9 @@ def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANC
 
     found = []
     if "start" in types:
+        track_rows = d.groupby("track_id").indices
         for c in crossings:
-            found += detect_start_events(d, c)
+            found += detect_start_events(d, c, track_rows)
     if "stop" in types:
         for area, area_stay in stays.items():
             on_area = [c for c in crossings if c["start_area"] == area]

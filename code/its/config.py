@@ -50,6 +50,16 @@ RESULTS_DIR = REPO_ROOT / "results"
 
 N_PARTS = 22   # tumdot_muc_part_1 ... tumdot_muc_part_22
 
+# All parts' bicycles in one file, sorted by time, with a `part` column
+# (built by code/scripts/build_combined.py). load_part() reads cyclists
+# from here when it exists; everything else still comes from the parts.
+BICYCLE_FILE = PARQUET_DIR / "tumdot_muc_bicycles.parquet"
+
+# Columns kept in BICYCLE_FILE. Add one here and rerun build_combined.py
+# when the analysis needs it (e.g. dimension_x, acceleration_x).
+BICYCLE_COLUMNS = ("timestamp", "category", "track_id",
+                   "translation_x", "translation_y", "velocity_x", "velocity_y")
+
 # --------------------------------------------------
 # COORDINATES
 # --------------------------------------------------
@@ -174,6 +184,11 @@ NEAR_DISTANCE = 5.0
 # earlier. The queue is the cyclists inside the area with speed below
 # STOP_SPEED in that stop's snapshot. One discharge per reference stop.
 DISCHARGE_MAX_LAG = 120.0
+
+# view_discharges.py only shows discharges with at least this many cyclists
+# in the queue (n_queue); 1 shows them all. --min-bikes and the viewer's
+# "min bikes" box change it; the CSVs always keep every discharge.
+DISCHARGE_MIN_BIKES = 1
 
 # Metres around the waiting area shown on the intersection view of the photos.
 SNAPSHOT_CONTEXT = 40.0

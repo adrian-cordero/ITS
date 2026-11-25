@@ -4,6 +4,8 @@ cyclist in or near the area is at that moment, with a viewer showing the
 waiting area and the whole intersection.
 
     python code/scripts/snapshot_events.py                    # part 16, all event types
+    python code/scripts/snapshot_events.py --part all         # the whole recording, one timeline
+    python code/scripts/snapshot_events.py --part 14-18       # parts 14 to 18
     python code/scripts/snapshot_events.py --view             # also open the viewer
     python code/scripts/snapshot_events.py --types stop --stop-speed 0.2 --stop-duration 1
     python code/scripts/snapshot_events.py --near 3 --context 60 --view
@@ -28,6 +30,12 @@ Event types:
               line (start, --lines in between, end) after the stop.
               Needs start and stop, which are then detected too.
 
+--part takes one part, a range or "all". A range is detected as one
+timeline: a queue that stops in one part and leaves in the next is one
+discharge. Event and discharge IDs run over the whole selection, and the
+`part` column says which part each event (snapshot time) or discharge
+(release time) falls in.
+
 The defaults of every option below are set in code/its/config.py
 (EVENT DETECTION); the options override them for one run.
 
@@ -47,13 +55,13 @@ keys after clicking the window) step through that crossing's events.
 areas (crossing_areas.gpkg) and the lines across them (as many as in
 animate.py) on and off on both panels.
 
-Writes to results/:
-    part<P>_events.csv              one row per event
-    part<P>_event_positions.csv     cyclists inside or near (and the trigger) per event,
+Writes to results/, as <S> = part16, part14-18 or all:
+    <S>_events.csv                  one row per event
+    <S>_event_positions.csv         cyclists inside or near (and the trigger) per event,
                                     with their local x, y
-    part<P>_discharges.csv          one row per discharge
-    part<P>_discharge_queues.csv    per discharge: its queue members and their snapshot position
-    part<P>_discharge_passes.csv    per discharge, queue member and line: the pass time
+    <S>_discharges.csv              one row per discharge
+    <S>_discharge_queues.csv        per discharge: its queue members and their snapshot position
+    <S>_discharge_passes.csv        per discharge, queue member and line: the pass time
 """
 
 import argparse
@@ -65,7 +73,7 @@ from matplotlib.lines import Line2D
 from matplotlib.widgets import Button, CheckButtons, RadioButtons
 
 from its.analysis.discharge import discharge_events
-from its.analysis.snapshots import snapshot_events
+from its.analysis.snapshots import TimeIndex, snapshot_events
 from its.areas import load_crossing_lines, load_source
 from its.config import (
     BICYCLE, CROSSING_LAYER, CROSSING_LINES, DISCHARGE_MAX_LAG, EVERY_STOP,
@@ -73,7 +81,7 @@ from its.config import (
     NEAR_DISTANCE, RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
 )
 from its.maps import load_basemap
-from its.trajectories import add_metric_coordinates, load_part
+from its.trajectories import add_metric_coordinates, load_parts, parse_parts, part_of, parts_label
 from its.viz.basemap import draw_basemap
 from its.viz.events import (
     END_COLOR, LAYER_STYLE, MID_STYLE, START_COLOR, draw_local_crossing, draw_shape, free_keys,
@@ -97,7 +105,7 @@ class Scene:
     """Everything the photos need besides the event tables."""
 
     def __init__(self, df, crossings, frames, near, context):
-        self.by_time = {t: g for t, g in df.groupby("timestamp")}
+        self.by_time = TimeIndex(df)
         self.crossings = crossings
         self.frames = frames
         self.near = near
@@ -118,7 +126,7 @@ class Scene:
 
 def title_of(ev):
     what = TYPE_LABEL[ev["type"]]
-    where = f"area {ev['area']}, crossing #{int(ev['crossing_id'])}"
+    where = f"part {ev['part']}, area {ev['area']}, crossing #{int(ev['crossing_id'])}"
     return (f"Event {ev['event_id']} · {what} · {where}\n"
             f"t = {ev['snapshot_time']:.2f} s · {ev['n_inside']} inside · {ev['n_near']} near")
 
@@ -327,8 +335,8 @@ class EventViewer:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
-                   help="trajectory part (default 16)")
+    p.add_argument("--part", default="16", metavar="P",
+                   help=f"a part (16), a range (14-18) or 'all' (1-{N_PARTS}); default 16")
     p.add_argument("--types", nargs="+", default=list(SNAPSHOT_EVENT_TYPES),
                    choices=["start", "stop", "discharge"],
                    help=f"event types to detect (default {' '.join(SNAPSHOT_EVENT_TYPES)})")
@@ -355,10 +363,14 @@ def main():
                    help="category codes (default 3: cyclists)")
     p.add_argument("--view", action="store_true", help="open the viewer")
     args = p.parse_args()
+    try:
+        parts = parse_parts(args.part)
+    except ValueError as e:
+        p.error(f"--part {e}")
 
     crossings = load_crossings(CROSSING_LAYER, args.crossings)
-    df = load_part(args.part, categories=args.categories,
-                   columns=["timestamp", "category", "track_id", "velocity_x", "velocity_y"])
+    df = load_parts(parts, categories=args.categories,
+                    columns=["timestamp", "category", "track_id", "velocity_x", "velocity_y"])
     df = add_metric_coordinates(df)
     df["speed"] = np.hypot(df["velocity_x"], df["velocity_y"])
 
@@ -366,19 +378,23 @@ def main():
     events, positions, frames = snapshot_events(
         df, crossings, types=types, near=args.near, stop_speed=args.stop_speed,
         stop_duration=args.stop_duration, every_stop=args.every_stop)
+    events.insert(1, "part", part_of(df, events["snapshot_time"]))
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    stem = RESULTS_DIR / f"part{args.part}"
+    label = parts_label(parts)
+    stem = RESULTS_DIR / label
+    many = len(parts) > 1
     events.to_csv(f"{stem}_events.csv", index=False)
     positions.to_csv(f"{stem}_event_positions.csv", index=False)
 
     used = ", ".join(f"#{cid} (area {f['area']})" for cid, f in sorted(frames.items()))
-    print(f"Part {args.part}: {len(events)} events for crossing(s) {used} (maps from {MAPS_DIR})")
+    print(f"{label}: {len(events)} events for crossing(s) {used} (maps from {MAPS_DIR})")
     print(f"  stop = below {args.stop_speed} m/s for {args.stop_duration} s; near = within {args.near} m")
     if len(events):
         print(events.groupby(["crossing_id", "type"]).size().to_string())
-        print(events[["event_id", "type", "crossing_id", "trigger_track", "snapshot_time",
-                      "n_inside", "n_near"]].to_string(index=False))
+        if not many:                      # the full list is too long for a range
+            print(events[["event_id", "type", "crossing_id", "trigger_track", "snapshot_time",
+                          "n_inside", "n_near"]].to_string(index=False))
     print(f"Wrote {stem}_events.csv and _event_positions.csv")
 
     if "discharge" in args.types:
@@ -386,15 +402,20 @@ def main():
         lines = lines[lines["crossing_id"].isin(frames)]
         discharges, queues, passes = discharge_events(df, events, positions, lines, args.stop_speed,
                                               args.max_lag)
+        discharges.insert(1, "part", part_of(df, discharges["release_time"]))
         discharges.to_csv(f"{stem}_discharges.csv", index=False)
         queues.to_csv(f"{stem}_discharge_queues.csv", index=False)
         passes.to_csv(f"{stem}_discharge_passes.csv", index=False)
         print(f"{len(discharges)} discharges (reference stop at most {args.max_lag:g} s "
               f"before the start event):")
-        if len(discharges):
+        if len(discharges) and many:
+            print(discharges.groupby(["crossing_id", "trigger_kind"]).size().to_string())
+            print("Queue size (n_queue): number of discharges")
+            print(discharges["n_queue"].value_counts().sort_index().to_string())
+        elif len(discharges):
             print(discharges.drop(columns=["area", "stop_time"]).to_string(index=False))
         print(f"Wrote {stem}_discharges.csv, _discharge_queues.csv and _discharge_passes.csv "
-              f"(view them with view_discharges.py)")
+              f"(view them with view_discharges.py --part {args.part})")
 
     if not len(events) or not args.view:
         return
