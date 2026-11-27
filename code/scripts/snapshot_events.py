@@ -3,8 +3,8 @@ Snapshot events in each crossing's start waiting area: where every
 cyclist in or near the area is at that moment, with a viewer showing the
 waiting area and the whole intersection.
 
-    python code/scripts/snapshot_events.py                    # part 16, all event types
-    python code/scripts/snapshot_events.py --part all         # the whole recording, one timeline
+    python code/scripts/snapshot_events.py                    # the whole recording, all event types
+    python code/scripts/snapshot_events.py --part 16          # one part
     python code/scripts/snapshot_events.py --part 14-18       # parts 14 to 18
     python code/scripts/snapshot_events.py --view             # also open the viewer
     python code/scripts/snapshot_events.py --types stop --stop-speed 0.2 --stop-duration 1
@@ -335,8 +335,8 @@ class EventViewer:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", default="16", metavar="P",
-                   help=f"a part (16), a range (14-18) or 'all' (1-{N_PARTS}); default 16")
+    p.add_argument("--part", default="all", metavar="P",
+                   help=f"a part (16), a range (14-18) or 'all' (1-{N_PARTS}; default)")
     p.add_argument("--types", nargs="+", default=list(SNAPSHOT_EVENT_TYPES),
                    choices=["start", "stop", "discharge"],
                    help=f"event types to detect (default {' '.join(SNAPSHOT_EVENT_TYPES)})")

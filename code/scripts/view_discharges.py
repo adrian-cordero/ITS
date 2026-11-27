@@ -2,12 +2,13 @@
 Discharge viewer: how each stopped queue left its waiting area over the
 crossing's lines. It only reads results; detect them first with
 
-    python code/scripts/snapshot_events.py --part 16        # writes the discharge CSVs
-    python code/scripts/view_discharges.py                  # part 16, queue discharges
+    python code/scripts/snapshot_events.py                  # writes the discharge CSVs (all parts)
+    python code/scripts/view_discharges.py                  # all parts, queue discharges
     python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
+    python code/scripts/view_discharges.py --min-bikes 4    # queues of 4 or more
 
-    python code/scripts/snapshot_events.py --part all       # the whole recording
-    python code/scripts/view_discharges.py --part all --min-bikes 4   # queues of 4 or more
+    python code/scripts/snapshot_events.py --part 16        # one part
+    python code/scripts/view_discharges.py --part 16
 
 --part must match the snapshot_events.py run (16, 14-18 or all).
 --min-bikes N only shows discharges with at least N cyclists in the queue
@@ -428,9 +429,9 @@ class DischargeViewer:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", default="16", metavar="P",
+    p.add_argument("--part", default="all", metavar="P",
                    help=f"the snapshot_events.py run to show: a part (16), a range (14-18) "
-                        f"or 'all' (1-{N_PARTS}); default 16")
+                        f"or 'all' (1-{N_PARTS}; default)")
     p.add_argument("--min-bikes", type=int, default=DISCHARGE_MIN_BIKES, metavar="N",
                    help=f"only discharges with at least N cyclists in the queue "
                         f"(default {DISCHARGE_MIN_BIKES}: all)")

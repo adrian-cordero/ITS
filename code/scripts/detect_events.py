@@ -1,5 +1,6 @@
 """
-Event detection for one trajectory part:
+Event detection, by default over the whole recording (all parts as one
+timeline, so tracks crossing a part boundary stay one track):
 
   1. occupancy: how many cyclists are inside each waiting area at every
      timestep (centre point inside the polygon)
@@ -8,13 +9,14 @@ Event detection for one trajectory part:
      (+1 = start -> end, -1 = the other way). Each bike is counted at
      most once per line and direction.
 
-    python code/scripts/detect_events.py              # part 16, cyclists
+    python code/scripts/detect_events.py              # all parts, cyclists
+    python code/scripts/detect_events.py --part 16    # one part (or a range: 14-18)
     python code/scripts/detect_events.py --part 3 --categories 3 8
 
-Writes to results/:
-    part<P>_occupancy.csv          timestamp, area_0 ... area_7, total
-    part<P>_line_crossings.csv     every crossing: crossing_id, line, track_id, time, direction, x, y
-    part<P>_crossing_summary.csv   per crossing: bikes crossing start / end line forward and backward
+Writes to results/ (<P> = all, part16 or part14-18):
+    <P>_occupancy.csv          timestamp, area_0 ... area_7, total
+    <P>_line_crossings.csv     every crossing: crossing_id, line, track_id, time, direction, x, y
+    <P>_crossing_summary.csv   per crossing: bikes crossing start / end line forward and backward
 """
 
 import argparse
@@ -26,13 +28,15 @@ from its.analysis.crossings import first_forward_per_track, forward_normal, line
 from its.analysis.occupancy import count_in_areas
 from its.areas import crossing_areas_path, load_crossing_lines, load_source
 from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, RESULTS_DIR
-from its.trajectories import add_metric_coordinates, frame_timestamps, load_part
+from its.trajectories import (
+    add_metric_coordinates, frame_timestamps, load_parts, parse_parts, parts_label,
+)
 
 
-def detect(part, categories, layer=CROSSING_LAYER):
-    timestamps = frame_timestamps(part)            # every frame, also those without cyclists
-    df = add_metric_coordinates(load_part(part, categories=categories,
-                                          columns=["timestamp", "category", "track_id"]))
+def detect(parts, categories, layer=CROSSING_LAYER):
+    timestamps = frame_timestamps(parts)           # every frame, also those without cyclists
+    df = add_metric_coordinates(load_parts(parts, categories=categories,
+                                           columns=["timestamp", "category", "track_id"]))
 
     areas = load_source(layer)
     occupancy = count_in_areas(df, areas.geometry, timestamps)
@@ -77,8 +81,8 @@ def summarise(crossings, crossing_ids):
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
-                   help="trajectory part (default 16)")
+    p.add_argument("--part", type=parse_parts, default="all", metavar="P",
+                   help=f"a part (16), a range (14-18) or all (1-{N_PARTS}; default)")
     p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
                    help="category codes to count (default 3: cyclists)")
     args = p.parse_args()
@@ -87,13 +91,14 @@ def main():
     summary = summarise(crossings, crossing_ids)
 
     RESULTS_DIR.mkdir(exist_ok=True)
-    stem = RESULTS_DIR / f"part{args.part}"
+    label = parts_label(args.part)
+    stem = RESULTS_DIR / label
     occupancy.to_csv(f"{stem}_occupancy.csv", index=False)
     crossings.to_csv(f"{stem}_line_crossings.csv", index=False)
     summary.to_csv(f"{stem}_crossing_summary.csv", index=False)
 
     area_cols = [c for c in occupancy.columns if c.startswith("area_")]
-    print(f"Part {args.part}: {df['track_id'].nunique()} tracks, {len(occupancy)} timesteps "
+    print(f"{label}: {df['track_id'].nunique()} tracks, {len(occupancy)} timesteps "
           f"(maps from {MAPS_DIR})")
     print("Occupancy, max / mean per area:")
     for c in area_cols:

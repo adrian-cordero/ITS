@@ -163,10 +163,13 @@ def part_of(df: pd.DataFrame, times):
     return starts.index.to_numpy()[np.clip(i, 0, len(starts) - 1)]
 
 
-def frame_timestamps(part: int):
-    """Every timestamp of a part, also frames without cyclists (sorted, unique)."""
-    ts = pq.read_table(parquet_path(part), columns=["timestamp"])["timestamp"].to_numpy()
-    return pd.unique(ts)
+def frame_timestamps(parts):
+    """Every timestamp of a part (or of several parts: a list), also frames
+    without cyclists (sorted, unique)."""
+    parts = [parts] if np.isscalar(parts) else list(parts)
+    ts = np.concatenate([pq.read_table(parquet_path(p), columns=["timestamp"])["timestamp"]
+                         .to_numpy() for p in parts])
+    return np.unique(ts)
 
 
 def tracks(df: pd.DataFrame) -> dict:

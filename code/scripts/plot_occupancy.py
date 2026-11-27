@@ -2,7 +2,8 @@
 Cyclists inside the waiting areas over time, as an interactive
 matplotlib window.
 
-    python code/scripts/plot_occupancy.py                    # part 16, areas 4 5 6 7 ticked
+    python code/scripts/plot_occupancy.py                    # all parts, areas 4 5 6 7 ticked
+    python code/scripts/plot_occupancy.py --part 16           # one part (or a range: 14-18)
     python code/scripts/plot_occupancy.py --areas 0 1 4       # tick other areas at the start
     python code/scripts/plot_occupancy.py --part 3 --categories 3 8
     python code/scripts/plot_occupancy.py --save occupancy.png
@@ -34,16 +35,18 @@ from matplotlib.widgets import CheckButtons
 from its.analysis.occupancy import area_events, count_in_areas, event_counts
 from its.areas import load_source
 from its.config import BICYCLE, CATEGORY_NAMES, DEFAULT_OCCUPANCY_AREAS, MAPS_DIR, N_PARTS
-from its.trajectories import add_metric_coordinates, frame_timestamps, load_part
+from its.trajectories import (
+    add_metric_coordinates, frame_timestamps, load_parts, parse_parts, parts_label,
+)
 from its.viz.interaction import enable_scroll_zoom
 
 AREA_LAYER = "waiting_areas"
 
 
-def compute(part, categories):
-    timestamps = frame_timestamps(part)            # every frame, also those without cyclists
-    df = add_metric_coordinates(load_part(part, categories=categories,
-                                          columns=["timestamp", "category", "track_id"]))
+def compute(parts, categories):
+    timestamps = frame_timestamps(parts)           # every frame, also those without cyclists
+    df = add_metric_coordinates(load_parts(parts, categories=categories,
+                                           columns=["timestamp", "category", "track_id"]))
     areas = load_source(AREA_LAYER).geometry
     occupancy = count_in_areas(df, areas, timestamps)
     counts = event_counts(area_events(df, areas), len(areas)).set_index("area")
@@ -141,27 +144,32 @@ class OccupancyPlot:
 def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("--part", type=int, default=16, choices=range(1, N_PARTS + 1), metavar="N",
-                   help="trajectory part (default 16)")
-    p.add_argument("--areas", type=int, nargs="+", default=list(DEFAULT_OCCUPANCY_AREAS),
+    p.add_argument("--part", type=parse_parts, default="all", metavar="P",
+                   help=f"a part (16), a range (14-18) or all (1-{N_PARTS}; default)")
+    p.add_argument("--areas", type=int, nargs="+", default=None,
                    help=f"waiting areas ticked at the start "
-                        f"(default {' '.join(map(str, DEFAULT_OCCUPANCY_AREAS))})")
+                        f"(default {' '.join(map(str, DEFAULT_OCCUPANCY_AREAS))}, "
+                        f"or all areas if the layer has none of those)")
     p.add_argument("--categories", type=int, nargs="+", default=[BICYCLE],
                    help="category codes to count (default 3: cyclists)")
     p.add_argument("--save", metavar="FILE", help="save the figure instead of opening a window")
     args = p.parse_args()
 
     occupancy, counts, n_areas = compute(args.part, args.categories)
+    if args.areas is None:
+        args.areas = ([a for a in DEFAULT_OCCUPANCY_AREAS if 0 <= a < n_areas]
+                      or list(range(n_areas)))
     bad = [a for a in args.areas if not 0 <= a < n_areas]
     if bad:
         raise SystemExit(f"No waiting area(s) {bad}: they are numbered 0-{n_areas - 1}")
 
     who = ", ".join(CATEGORY_NAMES[c] for c in args.categories)
-    print(f"Part {args.part}: {len(occupancy)} timesteps, {n_areas} waiting areas (from {MAPS_DIR})")
+    label = parts_label(args.part)
+    print(f"{label}: {len(occupancy)} timesteps, {n_areas} waiting areas (from {MAPS_DIR})")
     print("Events per area (each cyclist enters and leaves at most once):")
     print(counts.to_string())
     plot = OccupancyPlot(occupancy, counts, n_areas, set(args.areas),
-                         f"Inside the waiting areas, part {args.part} ({who})")
+                         f"Inside the waiting areas, {label} ({who})")
     if args.save:
         plot.fig.savefig(args.save, dpi=130)
         print(f"Saved {args.save}")
