@@ -28,6 +28,7 @@ are stored by their midpoints, so moving vertices around doesn't break them.
 All geometry here is in METRIC_CRS, so W and L are true metres.
 """
 
+import shutil
 import warnings
 from collections import namedtuple
 
@@ -37,7 +38,8 @@ import pandas as pd
 from shapely.geometry import LineString, Point, Polygon
 
 from its.config import (
-    CROSSING_AREAS_FILE, CROSSING_AREAS_LAYER, CROSSING_EDGES_LAYER, EDGE_PICKS_FILE, MAPS_DIR,
+    CROSSING_AREAS_FILE, CROSSING_AREAS_LAYER, CROSSING_EDGES_LAYER, CROSSINGS_DIR,
+    EDGE_PICKS_FILE, MAPS_DIR,
     METRIC_CRS, PROJECT_LAYERS,
 )
 from its.maps import single_parts
@@ -151,9 +153,9 @@ _PICK_COLUMNS = ["layer", "crossing_id", "start_area", "start_x", "start_y",
                  "end_area", "end_x", "end_y", "lines", "width"]
 
 
-def load_picks(layer: str, source: gpd.GeoDataFrame, maps_dir=MAPS_DIR) -> dict:
+def load_picks(layer: str, source: gpd.GeoDataFrame, crossings_dir=CROSSINGS_DIR) -> dict:
     """{crossing_id: Crossing} for `layer`."""
-    path = maps_dir / EDGE_PICKS_FILE
+    path = crossings_dir / EDGE_PICKS_FILE
     if not path.exists():
         return {}
     df = pd.read_csv(path)
@@ -184,8 +186,9 @@ def load_picks(layer: str, source: gpd.GeoDataFrame, maps_dir=MAPS_DIR) -> dict:
     return picks
 
 
-def save_picks(layer: str, source: gpd.GeoDataFrame, picks: dict, maps_dir=MAPS_DIR):
-    path = maps_dir / EDGE_PICKS_FILE
+def save_picks(layer: str, source: gpd.GeoDataFrame, picks: dict, crossings_dir=CROSSINGS_DIR):
+    crossings_dir.mkdir(parents=True, exist_ok=True)
+    path = crossings_dir / EDGE_PICKS_FILE
     rows = []
     for cid, c in sorted(picks.items()):
         s = polygon_edges(source.geometry.iloc[c.start_area])[c.start_edge].mean(axis=0)
@@ -261,12 +264,26 @@ def build_crossings(source: gpd.GeoDataFrame, picks: dict, width: float):
     return bands, edges
 
 
-def crossing_extent(layer: str, width: float, maps_dir=MAPS_DIR) -> gpd.GeoSeries:
+def share_source(layer: str, maps_dir=MAPS_DIR, crossings_dir=CROSSINGS_DIR):
+    """Copy the file of `layer` from maps_dir into crossings_dir (when they
+    differ), so the shared crossings come with the polygons they were picked
+    on. Returns the copy's path, or None if nothing was copied."""
+    src = maps_dir / PROJECT_LAYERS[layer]["file"]
+    dst = crossings_dir / src.name
+    if src.resolve() == dst.resolve():
+        return None
+    crossings_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
+    return dst
+
+
+def crossing_extent(layer: str, width: float, maps_dir=MAPS_DIR,
+                    crossings_dir=CROSSINGS_DIR) -> gpd.GeoSeries:
     """The polygons of `layer` used by at least one crossing (as start or
     end area) plus the crossing bands, in METRIC_CRS. With no crossings
     picked yet, every polygon of the layer."""
     source = load_source(layer, maps_dir)
-    picks = load_picks(layer, source, maps_dir)
+    picks = load_picks(layer, source, crossings_dir)
     if not picks:
         return source.geometry
     used = sorted({a for c in picks.values() for a in (c.start_area, c.end_area)})
@@ -275,14 +292,15 @@ def crossing_extent(layer: str, width: float, maps_dir=MAPS_DIR) -> gpd.GeoSerie
                          crs=source.crs)
 
 
-def crossing_areas_path(layer: str, maps_dir=MAPS_DIR):
+def crossing_areas_path(layer: str, crossings_dir=CROSSINGS_DIR):
     """CROSSING_AREAS_FILE: the crossings of `layer` (one layer at a time)."""
-    return maps_dir / CROSSING_AREAS_FILE
+    return crossings_dir / CROSSING_AREAS_FILE
 
 
-def save_crossings(layer: str, bands, edges, crs, maps_dir=MAPS_DIR):
+def save_crossings(layer: str, bands, edges, crs, crossings_dir=CROSSINGS_DIR):
     """Write CROSSING_AREAS_FILE (replacing it) with both layers, in `crs`."""
-    path = crossing_areas_path(layer, maps_dir)
+    crossings_dir.mkdir(parents=True, exist_ok=True)
+    path = crossing_areas_path(layer, crossings_dir)
     if path.exists():
         path.unlink()
     if bands.empty:
@@ -292,14 +310,14 @@ def save_crossings(layer: str, bands, edges, crs, maps_dir=MAPS_DIR):
     return path
 
 
-def load_crossing_lines(layer: str, n: int, maps_dir=MAPS_DIR) -> gpd.GeoDataFrame:
+def load_crossing_lines(layer: str, n: int, crossings_dir=CROSSINGS_DIR) -> gpd.GeoDataFrame:
     """
     Start, end and N in-between lines for every crossing in
     CROSSING_AREAS_FILE, in METRIC_CRS. N is the crossing's own number
     of lines if it has one, otherwise `n`. Columns: crossing_id, role
     ("start", "line", "end"), index (0 = start ... N + 1 = end), geometry.
     """
-    path = crossing_areas_path(layer, maps_dir)
+    path = crossing_areas_path(layer, crossings_dir)
     if not path.exists():
         raise FileNotFoundError(f"{path.name} not found: run code/scripts/define_crossings.py first")
 

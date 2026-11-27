@@ -23,8 +23,9 @@ a menu:
     q        save and quit
 
 Before deleting everything (clear or --reset), the current picks are
-copied to MAPS_DIR/edge_picks_backup_<date>-<time>.csv (a new file each
-time). To undo, copy that file over edge_picks.csv and run with --rebuild.
+copied to CROSSINGS_DIR/edge_picks_backups/edge_picks_backup_<date>-<time>.csv
+(a new file each time, git-ignored). To undo, copy that file over
+edge_picks.csv and run with --rebuild.
 
 Zoom with the mouse wheel or the toolbar (magnifier = zoom to a
 rectangle, arrows = pan, house = back to the automatic view); the
@@ -37,9 +38,13 @@ to cancel. Any number of
 crossings can start or end at the same area. Every change is saved
 straight away.
 
-Saves:
-    MAPS_DIR/edge_picks.csv                  the picks (reused by --rebuild)
-    MAPS_DIR/crossing_areas.gpkg             layers crossing_areas (bands) and crossing_edges
+Saves, in CROSSINGS_DIR (default data/maps/, so they are shared with git):
+    edge_picks.csv                  the picks (reused by --rebuild)
+    crossing_areas.gpkg             layers crossing_areas (bands) and crossing_edges
+    <layer file>, e.g. new_waiting_areas.gpkg
+                                    a copy of the polygons the crossings were picked
+                                    on, when MAPS_DIR is another folder (picks refer
+                                    to the polygons by row number, so both must match)
 """
 
 import argparse
@@ -52,10 +57,11 @@ import matplotlib.pyplot as plt
 from its.crossings import (
     Crossing, build_crossings, crossing_geometry, crossing_length, crossing_lines,
     effective_lines, effective_width, load_picks, load_source, next_crossing_id, polygon_edges,
-    reversed_crossing, save_crossings, save_picks,
+    reversed_crossing, save_crossings, save_picks, share_source,
 )
 from its.config import (
-    CROSSING_LAYER, CROSSING_LINES, CROSSING_WIDTH, EDGE_PICKS_FILE, MAPS_DIR, METRIC_CRS,
+    CROSSING_LAYER, CROSSING_LINES, CROSSING_WIDTH, CROSSINGS_DIR, EDGE_PICKS_BACKUP_DIR,
+    EDGE_PICKS_FILE, MAPS_DIR, METRIC_CRS,
 )
 from its.maps import load_basemap
 from its.viz.basemap import draw_basemap
@@ -82,10 +88,13 @@ def save_all(layer, source, picks, width, quiet=False):
     picks_path = save_picks(layer, source, picks)
     bands, edges = build_crossings(source, picks, width)
     gpkg_path = save_crossings(layer, bands, edges, source.attrs["file_crs"])
+    copy = share_source(layer)
     if not quiet:
         print(f"Saved {len(picks)} crossing(s) (default W = {width} m):")
         print(f"  {picks_path}")
         print(f"  {gpkg_path}")
+        if copy:
+            print(f"  {copy} (copy of the {layer} polygons they were picked on)")
 
 
 def clear_all(layer, source, picks, width, ask=input):
@@ -101,9 +110,10 @@ def clear_all(layer, source, picks, width, ask=input):
         print("  Nothing deleted.")
         return False
 
-    picks_path = MAPS_DIR / EDGE_PICKS_FILE
+    picks_path = CROSSINGS_DIR / EDGE_PICKS_FILE
     if picks_path.exists():
-        backup = MAPS_DIR / f"{BACKUP_PREFIX}_{datetime.now():%Y%m%d-%H%M%S}.csv"
+        EDGE_PICKS_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+        backup = EDGE_PICKS_BACKUP_DIR / f"{BACKUP_PREFIX}_{datetime.now():%Y%m%d-%H%M%S}.csv"
         shutil.copyfile(picks_path, backup)
         print(f"  Backup: {backup}")
     picks.clear()
@@ -485,7 +495,7 @@ def main():
     source = load_source(args.layer)
     picks = load_picks(args.layer, source)
     print(f"{args.layer}: {len(source)} areas, {len(picks)} crossing(s) "
-          f"(from {MAPS_DIR})")
+          f"(areas from {MAPS_DIR}, crossings in {CROSSINGS_DIR})")
 
     if args.rebuild:
         if not picks:

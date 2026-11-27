@@ -51,7 +51,7 @@ per line). **Snapshot:** the cyclist's last timestep before the line.
 ## 4. Stop event (`detect_queue_events.py`, type `stop`)
 
 A cyclist inside a crossing's start waiting area whose speed (from
-`velocity_x`, `velocity_y`) stays below `STOP_SPEED` (0.1 m/s) for at least
+`velocity_x`, `velocity_y`) stays below `STOP_SPEED` (0.5 m/s) for at least
 `STOP_DURATION` (0.5 s). By default only each cyclist's first stop per area
 counts (`EVERY_STOP`). A stop in an area where several crossings start is
 recorded once per crossing. **Snapshot:** the first timestep of the stop.

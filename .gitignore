@@ -14,3 +14,6 @@ code/its/local_settings.py
 
 # personal experiments
 code/scripts/scratch/
+
+# define_crossings.py backups of edge_picks.csv
+data/maps/edge_picks_backups/

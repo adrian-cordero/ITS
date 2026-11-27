@@ -10,6 +10,7 @@ and set the paths there, or set the matching environment variable:
     MAPS_DIR     / ITS_MAPS_DIR      folder with the .gpkg / .osm map files
     PARQUET_DIR  / ITS_PARQUET_DIR   folder with tumdot_muc_part_*.parquet
     BASEMAP      / ITS_BASEMAP       base-map file (e.g. osm_converted.kml)
+    CROSSINGS_DIR / ITS_CROSSINGS_DIR  where the crossings are saved (default data/maps)
 
 Environment variables win over local_settings.py. Windows paths
 (C:\\...) also work when running under WSL.
@@ -46,6 +47,10 @@ def _setting(name, default) -> Path:
 DATA_DIR = _setting("DATA_DIR", REPO_ROOT / "data")
 PARQUET_DIR = _setting("PARQUET_DIR", DATA_DIR / "parquet")
 MAPS_DIR = _setting("MAPS_DIR", DATA_DIR / "maps")
+# The crossings (define_crossings.py) are always saved and read here, in the
+# repo, so teammates get them with git. The layer they were picked on is
+# copied here too, since picks refer to its polygons by row number.
+CROSSINGS_DIR = _setting("CROSSINGS_DIR", REPO_ROOT / "data" / "maps")
 RESULTS_DIR = REPO_ROOT / "results"
 OCCUPANCY_RESULTS_DIR = RESULTS_DIR / "occupancy"         # detect_occupancy.py
 QUEUE_EVENTS_RESULTS_DIR = RESULTS_DIR / "queue_events"   # detect_queue_events.py
@@ -152,15 +157,18 @@ CROSSING_LINES = 4
 # changes it, --full shows all trajectories instead.
 ANIMATE_MARGIN = 10.0
 
-# Picked edges, stored in MAPS_DIR next to the layers.
+# Picked edges, stored in CROSSINGS_DIR.
 EDGE_PICKS_FILE = "edge_picks.csv"
 
-# The crossings built from the picks (define_crossings.py), in MAPS_DIR: a
+# The crossings built from the picks (define_crossings.py), in CROSSINGS_DIR: a
 # GeoPackage with layers CROSSING_AREAS_LAYER (the bands) and
 # CROSSING_EDGES_LAYER (their start and end lines).
 CROSSING_AREAS_FILE = "crossing_areas.gpkg"
 CROSSING_AREAS_LAYER = "crossing_areas"
 CROSSING_EDGES_LAYER = "crossing_edges"
+
+# Backups of EDGE_PICKS_FILE (define_crossings.py clear / --reset), git-ignored.
+EDGE_PICKS_BACKUP_DIR = CROSSINGS_DIR / "edge_picks_backups"
 
 # --------------------------------------------------
 # EVENT DETECTION (see code/scripts/plot_occupancy.py, detect_queue_events.py)

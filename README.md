@@ -76,7 +76,7 @@ python code/scripts/build_combined.py --categories all --columns all --output so
 
 Web Mercator distorts sizes: at Munich's latitude, lengths are about 1.5× and areas about 2.2× their real value. Use `translation_x/y` (UTM, in metres) for distances, speeds and areas.
 
-The map layers are edited in QGIS (`zone_delimitations.qgz`). `data/maps/` holds a shared snapshot. If you edit the layers in your own folder, point `MAPS_DIR` there (see Setup) and copy the files into `data/maps/` when teammates should get them.
+The map layers are edited in QGIS (`zone_delimitations.qgz`). `data/maps/` holds a shared snapshot. If you edit the layers in your own folder, point `MAPS_DIR` there (see Setup) and copy the files into `data/maps/` when teammates should get them. The crossings are the exception: `define_crossings.py` always saves them in `data/maps/` (`CROSSINGS_DIR`), together with a copy of the waiting-areas file they were picked on, so commit those three files after changing crossings.
 
 ## Map layers
 
@@ -206,9 +206,9 @@ In the animation window, use the time slider and the Play/Pause button; − / + 
 
    Type `c` while adding or editing to cancel. Any number of crossings can start or end at the same area. Every change is saved straight away.
 
-   `clear` (or `--reset` on the command line) first saves the current picks as `MAPS_DIR/edge_picks_backup_<date>-<time>.csv`, a new file each time. To undo, copy that file over `edge_picks.csv` and run `define_crossings.py --rebuild`.
+   `clear` (or `--reset` on the command line) first saves the current picks as `data/maps/edge_picks_backups/edge_picks_backup_<date>-<time>.csv` (git-ignored), a new file each time. To undo, copy that file over `edge_picks.csv` and run `define_crossings.py --rebuild`.
 2. **Build.** Both edges get length **W**, centred on their original midpoints. W is the crossing's own width if you gave it one (`w <#> <W>`); otherwise it's the default (`--width`, or `CROSSING_WIDTH` in `config.py`). The end edge is turned parallel to the start edge, and the crossing is the four-sided band between them. **L** is the distance between the two edges. The original areas aren't changed.
-3. **Save.** The crossings go into `MAPS_DIR/crossing_areas.gpkg`, which you can open in QGIS. It has two layers: `crossing_areas` (the bands) and `crossing_edges` (the start/end lines). The picks are saved in `MAPS_DIR/edge_picks.csv`; use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
+3. **Save.** The crossings go into `data/maps/crossing_areas.gpkg` (`CROSSINGS_DIR` in `config.py`), which you can open in QGIS. It has two layers: `crossing_areas` (the bands) and `crossing_edges` (the start/end lines). The picks are saved in `data/maps/edge_picks.csv`. If `MAPS_DIR` points elsewhere, the waiting-areas file the crossings were picked on is copied into `data/maps/` too, since picks refer to its polygons by row number. Commit these files so teammates get the same crossings. Use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
 
 `animate.py` draws each crossing's start and end edge, plus **N** lines in between. The lines split L into N + 1 equal parts, and each line has length W. N is the crossing's own number if you gave it one (`n <#> <N>` in the menu); otherwise it's the default (`CROSSING_LINES` in `config.py`, or `--lines N` on `animate.py`).
 
