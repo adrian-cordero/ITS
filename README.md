@@ -242,4 +242,4 @@ How each event is detected is described in [docs/events.md](docs/events.md).
 - [x] Visualise and animate trajectories on the site map, with waiting and merge areas
 - [x] Cyclists per waiting area per timestep, start/end line passes (`detect_occupancy.py`)
 - [x] Start, stop and discharge events (`detect_queue_events.py`)
-- [ ] Jam density and discharge rate per event
+- [ ] Still TBD

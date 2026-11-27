@@ -179,7 +179,7 @@ SNAPSHOT_EVENT_TYPES = ("start", "stop", "discharge")
 # A cyclist has stopped when its speed stays below STOP_SPEED (m/s) for at
 # least STOP_DURATION (s). With EVERY_STOP = False only its first stop per
 # waiting area is an event.
-STOP_SPEED = 0.1
+STOP_SPEED = 0.5
 STOP_DURATION = 0.5
 EVERY_STOP = False
 
