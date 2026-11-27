@@ -1,21 +1,21 @@
 """
-Event detection, by default over the whole recording (all parts as one
+Occupancy and line passes, by default over the whole recording (all parts as one
 timeline, so tracks crossing a part boundary stay one track):
 
   1. occupancy: how many cyclists are inside each waiting area at every
      timestep (centre point inside the polygon)
-  2. line crossings: for every crossing (pick_edges.py), each time a
+  2. line passes: for every crossing (define_crossings.py), each time a
      cyclist crosses its start line or end line, with direction
      (+1 = start -> end, -1 = the other way). Each bike is counted at
      most once per line and direction.
 
-    python code/scripts/detect_events.py              # all parts, cyclists
-    python code/scripts/detect_events.py --part 16    # one part (or a range: 14-18)
-    python code/scripts/detect_events.py --part 3 --categories 3 8
+    python code/scripts/detect_occupancy.py              # all parts, cyclists
+    python code/scripts/detect_occupancy.py --part 16    # one part (or a range: 14-18)
+    python code/scripts/detect_occupancy.py --part 3 --categories 3 8
 
-Writes to results/ (<P> = all, part16 or part14-18):
+Writes to results/occupancy/ (<P> = all, part16 or part14-18):
     <P>_occupancy.csv          timestamp, area_0 ... area_7, total
-    <P>_line_crossings.csv     every crossing: crossing_id, line, track_id, time, direction, x, y
+    <P>_line_passes.csv        every line pass: crossing_id, line, track_id, time, direction, x, y
     <P>_crossing_summary.csv   per crossing: bikes crossing start / end line forward and backward
 """
 
@@ -24,10 +24,10 @@ import argparse
 import _bootstrap  # noqa: F401
 import pandas as pd
 
-from its.analysis.crossings import first_forward_per_track, forward_normal, line_crossings
+from its.analysis.line_passes import first_forward_per_track, forward_normal, line_passes
 from its.analysis.occupancy import count_in_areas
-from its.areas import crossing_areas_path, load_crossing_lines, load_source
-from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, RESULTS_DIR
+from its.crossings import crossing_areas_path, load_crossing_lines, load_source
+from its.config import BICYCLE, CROSSING_LAYER, MAPS_DIR, N_PARTS, OCCUPANCY_RESULTS_DIR
 from its.trajectories import (
     add_metric_coordinates, frame_timestamps, load_parts, parse_parts, parts_label,
 )
@@ -50,7 +50,7 @@ def detect(parts, categories, layer=CROSSING_LAYER):
             by_role = dict(zip(grp["role"], grp.geometry))
             normal = forward_normal(by_role["start"], by_role["end"])
             for role in ("start", "end"):
-                c = line_crossings(df, by_role[role], normal)
+                c = line_passes(df, by_role[role], normal)
                 c.insert(0, "line", role)
                 c.insert(0, "crossing_id", cid)
                 rows.append(c)
@@ -90,11 +90,11 @@ def main():
     df, occupancy, crossings, crossing_ids = detect(args.part, args.categories)
     summary = summarise(crossings, crossing_ids)
 
-    RESULTS_DIR.mkdir(exist_ok=True)
+    OCCUPANCY_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     label = parts_label(args.part)
-    stem = RESULTS_DIR / label
+    stem = OCCUPANCY_RESULTS_DIR / label
     occupancy.to_csv(f"{stem}_occupancy.csv", index=False)
-    crossings.to_csv(f"{stem}_line_crossings.csv", index=False)
+    crossings.to_csv(f"{stem}_line_passes.csv", index=False)
     summary.to_csv(f"{stem}_crossing_summary.csv", index=False)
 
     area_cols = [c for c in occupancy.columns if c.startswith("area_")]
@@ -105,7 +105,7 @@ def main():
         print(f"  {c}: max {occupancy[c].max()}, mean {occupancy[c].mean():.2f}")
     print("Bikes crossing each line (each bike once):")
     print(summary.to_string(index=False) if len(summary) else "  no crossings defined")
-    print(f"Wrote {stem}_occupancy.csv, _line_crossings.csv, _crossing_summary.csv")
+    print(f"Wrote {stem}_occupancy.csv, _line_passes.csv, _crossing_summary.csv")
 
 
 if __name__ == "__main__":

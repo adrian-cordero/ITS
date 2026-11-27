@@ -33,7 +33,7 @@ import numpy as np
 from matplotlib.widgets import CheckButtons
 
 from its.analysis.occupancy import area_events, count_in_areas, event_counts
-from its.areas import load_source
+from its.crossings import load_source
 from its.config import BICYCLE, CATEGORY_NAMES, DEFAULT_OCCUPANCY_AREAS, MAPS_DIR, N_PARTS
 from its.trajectories import (
     add_metric_coordinates, frame_timestamps, load_parts, parse_parts, parts_label,

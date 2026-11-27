@@ -3,12 +3,12 @@ Snapshot events in each crossing's start waiting area: where every
 cyclist in or near the area is at that moment, with a viewer showing the
 waiting area and the whole intersection.
 
-    python code/scripts/snapshot_events.py                    # the whole recording, all event types
-    python code/scripts/snapshot_events.py --part 16          # one part
-    python code/scripts/snapshot_events.py --part 14-18       # parts 14 to 18
-    python code/scripts/snapshot_events.py --view             # also open the viewer
-    python code/scripts/snapshot_events.py --types stop --stop-speed 0.2 --stop-duration 1
-    python code/scripts/snapshot_events.py --near 3 --context 60 --view
+    python code/scripts/detect_queue_events.py                    # the whole recording, all event types
+    python code/scripts/detect_queue_events.py --part 16          # one part
+    python code/scripts/detect_queue_events.py --part 14-18       # parts 14 to 18
+    python code/scripts/detect_queue_events.py --view             # also open the viewer
+    python code/scripts/detect_queue_events.py --types stop --stop-speed 0.2 --stop-duration 1
+    python code/scripts/detect_queue_events.py --near 3 --context 60 --view
 
 Event types:
     start     a cyclist crosses a start line forward (snapshot: its last
@@ -55,7 +55,7 @@ keys after clicking the window) step through that crossing's events.
 areas (crossing_areas.gpkg) and the lines across them (as many as in
 animate.py) on and off on both panels.
 
-Writes to results/, as <S> = part16, part14-18 or all:
+Writes to results/queue_events/, as <S> = part16, part14-18 or all:
     <S>_events.csv                  one row per event
     <S>_event_positions.csv         cyclists inside or near (and the trigger) per event,
                                     with their local x, y
@@ -73,12 +73,12 @@ from matplotlib.lines import Line2D
 from matplotlib.widgets import Button, CheckButtons, RadioButtons
 
 from its.analysis.discharge import discharge_events
-from its.analysis.snapshots import TimeIndex, snapshot_events
-from its.areas import load_crossing_lines, load_source
+from its.analysis.start_stop import TimeIndex, start_stop_events
+from its.crossings import load_crossing_lines, load_source
 from its.config import (
     BICYCLE, CROSSING_LAYER, CROSSING_LINES, DISCHARGE_MAX_LAG, EVERY_STOP,
     MAPS_DIR, METRIC_CRS, N_PARTS,
-    NEAR_DISTANCE, RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
+    NEAR_DISTANCE, QUEUE_EVENTS_RESULTS_DIR, SNAPSHOT_CONTEXT, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
 )
 from its.maps import load_basemap
 from its.trajectories import add_metric_coordinates, load_parts, parse_parts, part_of, parts_label
@@ -375,14 +375,14 @@ def main():
     df["speed"] = np.hypot(df["velocity_x"], df["velocity_y"])
 
     types = set(args.types) | ({"start", "stop"} if "discharge" in args.types else set())
-    events, positions, frames = snapshot_events(
+    events, positions, frames = start_stop_events(
         df, crossings, types=types, near=args.near, stop_speed=args.stop_speed,
         stop_duration=args.stop_duration, every_stop=args.every_stop)
     events.insert(1, "part", part_of(df, events["snapshot_time"]))
 
-    RESULTS_DIR.mkdir(exist_ok=True)
+    QUEUE_EVENTS_RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     label = parts_label(parts)
-    stem = RESULTS_DIR / label
+    stem = QUEUE_EVENTS_RESULTS_DIR / label
     many = len(parts) > 1
     events.to_csv(f"{stem}_events.csv", index=False)
     positions.to_csv(f"{stem}_event_positions.csv", index=False)

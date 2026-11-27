@@ -47,6 +47,8 @@ DATA_DIR = _setting("DATA_DIR", REPO_ROOT / "data")
 PARQUET_DIR = _setting("PARQUET_DIR", DATA_DIR / "parquet")
 MAPS_DIR = _setting("MAPS_DIR", DATA_DIR / "maps")
 RESULTS_DIR = REPO_ROOT / "results"
+OCCUPANCY_RESULTS_DIR = RESULTS_DIR / "occupancy"         # detect_occupancy.py
+QUEUE_EVENTS_RESULTS_DIR = RESULTS_DIR / "queue_events"   # detect_queue_events.py
 
 N_PARTS = 22   # tumdot_muc_part_1 ... tumdot_muc_part_22
 
@@ -131,14 +133,14 @@ PROJECT_LAYERS = {
 DEFAULT_PROJECT_LAYERS = ("waiting_areas",)
 
 # --------------------------------------------------
-# CROSSING AREAS (see its/areas.py and code/scripts/pick_edges.py)
+# CROSSING AREAS (see its/crossings.py and code/scripts/define_crossings.py)
 # --------------------------------------------------
 
 # Layer whose polygons get a start and end edge.
 CROSSING_LAYER = "waiting_areas"
 
 # W: length of the start edge, the end edge and every line in between,
-# in metres. Change it and run `pick_edges.py --rebuild`; no re-picking.
+# in metres. Change it and run `define_crossings.py --rebuild`; no re-picking.
 CROSSING_WIDTH = 8.0
 
 # N: number of lines drawn between the start and end edge (default for
@@ -153,7 +155,7 @@ ANIMATE_MARGIN = 10.0
 # Picked edges, stored in MAPS_DIR next to the layers.
 EDGE_PICKS_FILE = "edge_picks.csv"
 
-# The crossings built from the picks (pick_edges.py), in MAPS_DIR: a
+# The crossings built from the picks (define_crossings.py), in MAPS_DIR: a
 # GeoPackage with layers CROSSING_AREAS_LAYER (the bands) and
 # CROSSING_EDGES_LAYER (their start and end lines).
 CROSSING_AREAS_FILE = "crossing_areas.gpkg"
@@ -161,14 +163,14 @@ CROSSING_AREAS_LAYER = "crossing_areas"
 CROSSING_EDGES_LAYER = "crossing_edges"
 
 # --------------------------------------------------
-# EVENT DETECTION (see code/scripts/plot_occupancy.py, snapshot_events.py)
+# EVENT DETECTION (see code/scripts/plot_occupancy.py, detect_queue_events.py)
 # --------------------------------------------------
 # Command-line options of the scripts override these for one run.
 
 # Waiting areas ticked when the occupancy plot opens.
 DEFAULT_OCCUPANCY_AREAS = (4, 5, 6, 7)
 
-# Event types snapshot_events.py detects: "start" (a start line crossed
+# Event types detect_queue_events.py detects: "start" (a start line crossed
 # forward), "stop" (a cyclist stopping in the start waiting area) and/or
 # "discharge" (a stopped queue released over the crossing's lines; needs
 # start and stop, which are then detected too).

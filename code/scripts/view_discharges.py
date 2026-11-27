@@ -2,15 +2,15 @@
 Discharge viewer: how each stopped queue left its waiting area over the
 crossing's lines. It only reads results; detect them first with
 
-    python code/scripts/snapshot_events.py                  # writes the discharge CSVs (all parts)
+    python code/scripts/detect_queue_events.py                  # writes the discharge CSVs (all parts)
     python code/scripts/view_discharges.py                  # all parts, queue discharges
     python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
     python code/scripts/view_discharges.py --min-bikes 4    # queues of 4 or more
 
-    python code/scripts/snapshot_events.py --part 16        # one part
+    python code/scripts/detect_queue_events.py --part 16        # one part
     python code/scripts/view_discharges.py --part 16
 
---part must match the snapshot_events.py run (16, 14-18 or all).
+--part must match the detect_queue_events.py run (16, 14-18 or all).
 --min-bikes N only shows discharges with at least N cyclists in the queue
 (n_queue >= N; the "min bikes" box changes it in the window).
 
@@ -50,10 +50,12 @@ import numpy as np
 import pandas as pd
 from matplotlib.widgets import Button, CheckButtons, RadioButtons, TextBox
 
-from its.analysis.crossings import forward_normal
-from its.analysis.snapshots import local_frame
-from its.areas import crossing_length
-from its.config import BICYCLE, CROSSING_LAYER, DISCHARGE_MIN_BIKES, N_PARTS, RESULTS_DIR
+from its.analysis.line_passes import forward_normal
+from its.analysis.start_stop import local_frame
+from its.crossings import crossing_length
+from its.config import (
+    BICYCLE, CROSSING_LAYER, DISCHARGE_MIN_BIKES, N_PARTS, QUEUE_EVENTS_RESULTS_DIR,
+)
 from its.trajectories import add_metric_coordinates, load_parts, parse_parts, parts_label
 from its.viz.events import (
     END_COLOR, MID_STYLE, START_COLOR, draw_local_crossing, free_keys, load_bands,
@@ -80,16 +82,16 @@ def member_colors(n):
 
 
 def read_results(label, part_arg):
-    """The discharge CSVs of one snapshot_events.py run (label: part16, part14-18, all)."""
+    """The discharge CSVs of one detect_queue_events.py run (label: part16, part14-18, all)."""
     names = ("discharges", "discharge_queues", "discharge_passes", "event_positions")
-    missing = [n for n in names if not (RESULTS_DIR / f"{label}_{n}.csv").exists()]
+    missing = [n for n in names if not (QUEUE_EVENTS_RESULTS_DIR / f"{label}_{n}.csv").exists()]
     if missing:
         raise SystemExit(f"{', '.join(f'{label}_{n}.csv' for n in missing)} not found in "
-                         f"{RESULTS_DIR}: run snapshot_events.py --part {part_arg} first")
-    out = [pd.read_csv(RESULTS_DIR / f"{label}_{n}.csv") for n in names]
+                         f"{QUEUE_EVENTS_RESULTS_DIR}: run detect_queue_events.py --part {part_arg} first")
+    out = [pd.read_csv(QUEUE_EVENTS_RESULTS_DIR / f"{label}_{n}.csv") for n in names]
     if "part" not in out[0]:
         raise SystemExit(f"{label}_discharges.csv is from an older version: "
-                         f"rerun snapshot_events.py --part {part_arg}")
+                         f"rerun detect_queue_events.py --part {part_arg}")
     return out
 
 
@@ -430,7 +432,7 @@ def main():
     p = argparse.ArgumentParser(description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("--part", default="all", metavar="P",
-                   help=f"the snapshot_events.py run to show: a part (16), a range (14-18) "
+                   help=f"the detect_queue_events.py run to show: a part (16), a range (14-18) "
                         f"or 'all' (1-{N_PARTS}; default)")
     p.add_argument("--min-bikes", type=int, default=DISCHARGE_MIN_BIKES, metavar="N",
                    help=f"only discharges with at least N cyclists in the queue "

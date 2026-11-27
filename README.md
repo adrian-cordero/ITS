@@ -11,24 +11,28 @@ ITS/
 │   └── maps/                 Rheinstrasse_osm.osm (base map), waiting/merge areas (.gpkg), QGIS projects
 ├── code/
 │   ├── its/                  Shared library. Importing it never opens a window or loads data.
-│   │   ├── config.py         Paths, coordinate systems, categories, which map layers exist, stop/exit lines
-│   │   ├── trajectories.py   load_part(), load_bicycles(), frame_timestamps(), tracks(), counts_per_time()
+│   │   ├── config.py         Paths, coordinate systems, categories, map layers, event thresholds
+│   │   ├── trajectories.py   load_part(), load_parts(), load_bicycles(), frame_timestamps(), counts_per_time()
 │   │   ├── maps.py           load_basemap(), load_project_layers()
-│   │   ├── analysis/
-│   │   │   ├── occupancy.py  Road users inside each area per timestep
-│   │   │   ├── crossings.py  Line crossings with direction and interpolated time
-│   │   │   ├── snapshots.py  Start and stop events with snapshots of the waiting area
-│   │   │   ├── discharge.py  Discharges: a stopped queue released over a crossing's lines
-│   │   │   └── queues.py     Jam density, discharge rate
+│   │   ├── crossings.py      Crossing geometry: bands between two waiting areas and their lines
+│   │   ├── analysis/         Event detection (see docs/events.md)
+│   │   │   ├── occupancy.py    Road users inside each area per timestep, entries and exits
+│   │   │   ├── line_passes.py  Road users going over a line, with direction and interpolated time
+│   │   │   ├── start_stop.py   Start and stop events, with a snapshot of the waiting area
+│   │   │   └── discharge.py    Discharges: a stopped queue released over a crossing's lines
 │   │   └── viz/
 │   │       ├── styles.py     All colours and line styles
-│   │       ├── basemap.py    Draw the map and project layers
-│   │       ├── frames.py     Precompute per-timestamp frames
-│   │       ├── player.py     AnimationPlayer: dots, slider, play button, hover
+│   │       ├── basemap.py    Draw the map and project layers, frame the view
+│   │       ├── crossings.py  Draw crossing lines
+│   │       ├── frames.py     Per-timestamp frames as slices of sorted arrays
+│   │       ├── player.py     AnimationPlayer: dots, slider, play/speed buttons, hover
 │   │       ├── events.py     Crossings in the local frame, shared by the event viewers
-│   │       ├── count_graph.py, legends.py, static.py
+│   │       └── count_graph.py, legends.py, static.py, interaction.py
 │   └── scripts/              What you run (see Usage)
-├── results/                  Output of detect_events.py
+├── docs/events.md            Which events are detected and how
+├── results/
+│   ├── occupancy/            Output of detect_occupancy.py
+│   └── queue_events/         Output of detect_queue_events.py (read by view_discharges.py)
 └── requirements.txt
 ```
 
@@ -136,53 +140,56 @@ MAPS_DIR = r"C:\Users\<you>\OneDrive\...\project\maps"
 
 Run the scripts from the repo root (or with the IDE's Run button). Add `--help` to any script to see all its options.
 
+Every script with `--part` runs on the whole recording by default; `--part 16` or `--part 14-18` picks one part or a range.
+
 ```bash
-# Animation. Default: part 16, cyclists only, waiting areas + crossings, count graph
+# Animation. Default: all parts, cyclists only, framed on the crossings + 10 m, count graph
 python code/scripts/animate.py
+python code/scripts/animate.py --speed 4 --margin 25      # 4x real time; --full = all trajectories
 python code/scripts/animate.py --part 3 --categories 1 3 --layers waiting_areas system
 python code/scripts/animate.py --no-graph --satellite
 python code/scripts/animate.py --save frame.png --frame 500     # still image, no window
 
 # Crossing areas: add/edit/delete crossings, then rebuild with another width without re-picking
-python code/scripts/pick_edges.py --width 5
-python code/scripts/pick_edges.py --rebuild --width 4
-python code/scripts/pick_edges.py --reset              # delete all crossings and start over (asks first)
+python code/scripts/define_crossings.py --width 5
+python code/scripts/define_crossings.py --rebuild --width 4
+python code/scripts/define_crossings.py --reset              # delete all crossings and start over (asks first)
 
-# Static plot of all trajectories in a part
-python code/scripts/plot_trajectories.py --part 1 --categories 3 --layers waiting_areas
+# Static plot of all trajectories
+python code/scripts/plot_trajectories.py --categories 3 --layers waiting_areas
 
-# Event detection: cyclists per waiting area per timestep, and start/end line crossings
-python code/scripts/detect_events.py --part 16
+# Occupancy and line passes: cyclists per waiting area per timestep, start/end line passes
+python code/scripts/detect_occupancy.py
 
-# Cyclists inside the waiting areas over time (checkboxes pick the areas; 4-7 by default)
+# Cyclists inside the waiting areas over time (checkboxes pick the areas)
 python code/scripts/plot_occupancy.py
 python code/scripts/plot_occupancy.py --areas 0 1 4
 
-# Snapshot events in a crossing's start waiting area: start-line crossings ("start"), cyclists
+# Queue events in a crossing's start waiting area: start-line passes ("start"), cyclists
 # stopping ("stop") and queues released over the crossing's lines ("discharge")
 # (tables + a photo of the area and the whole intersection per event; --view steps through them)
-python code/scripts/snapshot_events.py --view
-python code/scripts/snapshot_events.py --near 5 --stop-speed 0.1 --stop-duration 0.5
-python code/scripts/snapshot_events.py --types discharge --max-lag 90 --lines 4
+python code/scripts/detect_queue_events.py --view
+python code/scripts/detect_queue_events.py --near 5 --stop-speed 0.1 --stop-duration 0.5
+python code/scripts/detect_queue_events.py --types discharge --max-lag 90 --lines 4
 
 # Discharge viewer (reads the CSVs above): queue & paths, time–distance, start-line headways
 python code/scripts/view_discharges.py
 python code/scripts/view_discharges.py --kind all       # also rolling-start discharges
 
-# The whole recording (or a range of parts) as one timeline, then only queues of 4+ cyclists
-python code/scripts/snapshot_events.py --part all       # ~20 s; also --part 14-18
-python code/scripts/view_discharges.py --part all --min-bikes 4
+# One part, then only queues of 4+ cyclists
+python code/scripts/detect_queue_events.py --part 16
+python code/scripts/view_discharges.py --part 16 --min-bikes 4
 
 # Rebuild the Parquet files from the original CSVs, then the bicycle file
 python code/scripts/csv_to_parquet.py "path/to/Trajectory Data"
 python code/scripts/build_combined.py
 ```
 
-In the animation window, use the time slider and the Play/Pause button. Hover over a dot to see its track ID and category.
+In the animation window, use the time slider and the Play/Pause button; − / + (buttons or keys) halve and double the speed, left / right step one frame, page up / page down jump a minute. Hover over a dot to see its track ID and category.
 
 ### Crossing areas
 
-`pick_edges.py` builds crossings between the polygons of `CROSSING_LAYER` in `config.py` (currently the waiting areas). Each crossing is a band of constant width that runs from a start edge on one area to an end edge on another area:
+`define_crossings.py` builds crossings between the polygons of `CROSSING_LAYER` in `config.py` (currently the waiting areas). Each crossing is a band of constant width that runs from a start edge on one area to an end edge on another area:
 
 1. **Pick.** The window shows the areas numbered in orange, and the existing crossings as `#0`, `#1`, and so on. The terminal lists the crossings, followed by a menu:
 
@@ -199,7 +206,7 @@ In the animation window, use the time slider and the Play/Pause button. Hover ov
 
    Type `c` while adding or editing to cancel. Any number of crossings can start or end at the same area. Every change is saved straight away.
 
-   `clear` (or `--reset` on the command line) first saves the current picks as `MAPS_DIR/edge_picks_backup_<date>-<time>.csv`, a new file each time. To undo, copy that file over `edge_picks.csv` and run `pick_edges.py --rebuild`.
+   `clear` (or `--reset` on the command line) first saves the current picks as `MAPS_DIR/edge_picks_backup_<date>-<time>.csv`, a new file each time. To undo, copy that file over `edge_picks.csv` and run `define_crossings.py --rebuild`.
 2. **Build.** Both edges get length **W**, centred on their original midpoints. W is the crossing's own width if you gave it one (`w <#> <W>`); otherwise it's the default (`--width`, or `CROSSING_WIDTH` in `config.py`). The end edge is turned parallel to the start edge, and the crossing is the four-sided band between them. **L** is the distance between the two edges. The original areas aren't changed.
 3. **Save.** The crossings go into `MAPS_DIR/crossing_areas.gpkg`, which you can open in QGIS. It has two layers: `crossing_areas` (the bands) and `crossing_edges` (the start/end lines). The picks are saved in `MAPS_DIR/edge_picks.csv`; use `--rebuild --width 4` to rebuild without picking again. The new default width only changes crossings that don't have their own.
 
@@ -209,15 +216,18 @@ Picks are linked to areas by their order in the layer's file. If you delete or r
 
 ### Several parts at once
 
-`--part` on `snapshot_events.py` and `view_discharges.py` takes one part (`16`), a range (`14-18`) or `all`. A range is detected as one timeline, so a queue that stops in one part and leaves in the next is still one discharge, and a cyclist who is already standing still when a part begins isn't counted as a new stop. The results go to `results/<S>_*.csv` with `<S>` = `part16`, `part14-18` or `all`. Event and discharge IDs run over the whole selection, and a `part` column says which part each event (snapshot time) or discharge (release time) falls in. Run the viewer with the same `--part` as the detection.
+`--part` takes one part (`16`), a range (`14-18`) or `all`. A range is detected as one timeline, so a queue that stops in one part and leaves in the next is still one discharge, and a cyclist who is already standing still when a part begins isn't counted as a new stop. The results go to `results/occupancy/<S>_*.csv` and `results/queue_events/<S>_*.csv` with `<S>` = `part16`, `part14-18` or `all`. Event and discharge IDs run over the whole selection, and a `part` column says which part each event (snapshot time) or discharge (release time) falls in. Run the viewer with the same `--part` as the detection.
 
 `--min-bikes N` (or the viewer's "min bikes" box, Enter to apply) only shows discharges with at least N cyclists in the queue (`n_queue >= N`). The default is `DISCHARGE_MIN_BIKES` in `config.py` (1: all). The CSVs always keep every discharge.
 
 ## Event naming
 
+How each event is detected is described in [docs/events.md](docs/events.md).
+
 | Term | Meaning |
 |---|---|
 | crossing | The area/band from a start line to an end line (`crossing_id`). Never an event. |
+| line pass | A road user going over a line (`line_passes.py`): +1 forward (start → end), −1 backward |
 | line | One of the crossing's N + 2 lines: `line_index` 0 = start, 1 … N in between, N + 1 = end |
 | start event | A cyclist's first forward pass of a start line (`type = "start"`) |
 | stop event | A cyclist staying below `STOP_SPEED` for `STOP_DURATION` in the start waiting area (`type = "stop"`) |
@@ -230,6 +240,6 @@ Picks are linked to areas by their order in the layer's file. If you delete or r
 
 - [x] Convert the data to Parquet
 - [x] Visualise and animate trajectories on the site map, with waiting and merge areas
-- [x] Cyclists per waiting area per timestep, start/end line crossings (`detect_events.py`)
-- [x] Start, stop and discharge events (`snapshot_events.py`)
+- [x] Cyclists per waiting area per timestep, start/end line passes (`detect_occupancy.py`)
+- [x] Start, stop and discharge events (`detect_queue_events.py`)
 - [ ] Jam density and discharge rate per event

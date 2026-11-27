@@ -1,14 +1,14 @@
 """
-Drawing shared by the event viewers (snapshot_events.py, view_discharges.py):
+Drawing shared by the event viewers (detect_queue_events.py, view_discharges.py):
 the crossings and their waiting areas, drawn in a crossing's local frame
-(its.analysis.snapshots.LocalFrame) or in METRIC_CRS.
+(its.analysis.start_stop.LocalFrame) or in METRIC_CRS.
 """
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
 
-from its.areas import crossing_areas_path, crossing_lines, load_crossing_lines, load_source
+from its.crossings import crossing_areas_path, crossing_lines, load_crossing_lines, load_source
 from its.config import CROSSING_AREAS_LAYER, METRIC_CRS
 from its.viz.styles import CROSSING_LINE_STYLES
 
@@ -33,7 +33,7 @@ def load_crossings(layer, only=None):
     """[{crossing_id, start_area, area_polygon, start_line, end_line}] in METRIC_CRS."""
     path = crossing_areas_path(layer)
     if not path.exists():
-        raise SystemExit(f"{path.name} not found: make crossings with pick_edges.py first")
+        raise SystemExit(f"{path.name} not found: make crossings with define_crossings.py first")
     areas = load_source(layer)
     bands = gpd.read_file(path, layer=CROSSING_AREAS_LAYER)
     start_area = dict(zip(bands["crossing_id"], bands["start_area"]))

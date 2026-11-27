@@ -1,11 +1,12 @@
 """
-Detect road users crossing a line segment, and in which direction.
+Line passes: road users going over a line segment, and in which direction.
 
-A crossing is a step between two consecutive positions of the same
+A line pass is a step between two consecutive positions of the same
 track that intersects the segment. Its direction is +1 when the step
-moves along `normal` (for a crossing area: from the start line towards
-the end line) and -1 against it. The crossing time is interpolated
-between the two timestamps.
+moves along `normal` (for a crossing: from the start line towards the
+end line) and -1 against it. The pass time is interpolated between the
+two timestamps. ("Crossing" is kept for the band between two waiting
+areas, its.crossings; it is never an event.)
 
 Positions (utm_x, utm_y) and lines are in METRIC_CRS.
 """
@@ -20,7 +21,7 @@ def _cross(ax, ay, bx, by):
     return ax * by - ay * bx
 
 
-def line_crossings(df: pd.DataFrame, line, normal) -> pd.DataFrame:
+def line_passes(df: pd.DataFrame, line, normal) -> pd.DataFrame:
     """
     Every time a track crosses the segment `line`.
 

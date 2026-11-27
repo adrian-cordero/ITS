@@ -56,7 +56,7 @@ PROJECT_LAYER_STYLES = {
 DEFAULT_PROJECT_LAYER_STYLE = dict(facecolor="none", edgecolor="black", linewidth=1.0)
 
 # --------------------------------------------------
-# CROSSING LINES (keys are the `role` from its.areas.load_crossing_lines)
+# CROSSING LINES (keys are the `role` from its.crossings.load_crossing_lines)
 # --------------------------------------------------
 
 CROSSING_LINE_STYLES = {

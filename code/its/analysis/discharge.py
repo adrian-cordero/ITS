@@ -8,7 +8,7 @@ Naming
                      between ("line"), N + 1 the end line ("end")
     line pass        one cyclist going forward over one line (a measurement)
     start event      a cyclist's first forward pass of the start line
-                     (type "start" in its.analysis.snapshots)
+                     (type "start" in its.analysis.start_stop)
     stop event       a cyclist stopping in the start waiting area (type "stop")
     reference stop   the stop event a start event is matched to: the latest
                      stop event of the same crossing at or before it, at most
@@ -35,7 +35,7 @@ stop happened); its passes are then listed under each discharge.
 import numpy as np
 import pandas as pd
 
-from its.analysis.crossings import forward_normal, line_crossings
+from its.analysis.line_passes import forward_normal, line_passes
 
 DISCHARGE_COLUMNS = ["discharge_id", "crossing_id", "area", "n_lines", "stop_event_id", "trigger_event_id",
                      "trigger_track", "trigger_kind", "trigger_in_queue", "n_skipped_starts", "stop_time", "release_time",
@@ -94,7 +94,7 @@ def first_passes(df, crossing_lines, crossing_id, tracks):
     d = df[df["track_id"].isin(tracks)]
     out = []
     for line in lines.itertuples():
-        c = line_crossings(d, line.geometry, normal)
+        c = line_passes(d, line.geometry, normal)
         c = c[c["direction"] > 0].drop(columns="direction")
         out.append(c.assign(line_index=int(line.index), line_role=line.role))
     return pd.concat(out, ignore_index=True)
@@ -104,9 +104,9 @@ def discharge_events(df, events, positions, crossing_lines, stop_speed, max_lag)
     """
     df              cyclist rows: track_id, timestamp, utm_x, utm_y (METRIC_CRS)
     events          snapshot events with types "start" and "stop"
-                    (its.analysis.snapshots.snapshot_events)
+                    (its.analysis.start_stop.start_stop_events)
     positions       their snapshot positions
-    crossing_lines  its.areas.load_crossing_lines(): crossing_id, role, index, geometry
+    crossing_lines  its.crossings.load_crossing_lines(): crossing_id, role, index, geometry
 
     Returns (discharges, queues, passes) with DISCHARGE_COLUMNS, QUEUE_COLUMNS
     and PASS_COLUMNS. n_lines is N, the number of lines between start and end.

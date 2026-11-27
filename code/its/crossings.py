@@ -3,7 +3,7 @@ Crossing areas: a band of constant width W from a start edge on one
 polygon to an end edge on another polygon of the same layer, with N
 lines drawn across it.
 
-For each crossing (code/scripts/pick_edges.py does steps 1-3):
+For each crossing (code/scripts/define_crossings.py does steps 1-3):
   1. you pick a start edge on polygon A and an end edge on polygon B
   2. crossing_edges(): both edges get length W, centred on their original
      midpoints, and the end edge is turned parallel to the start edge.
@@ -301,7 +301,7 @@ def load_crossing_lines(layer: str, n: int, maps_dir=MAPS_DIR) -> gpd.GeoDataFra
     """
     path = crossing_areas_path(layer, maps_dir)
     if not path.exists():
-        raise FileNotFoundError(f"{path.name} not found: run code/scripts/pick_edges.py first")
+        raise FileNotFoundError(f"{path.name} not found: run code/scripts/define_crossings.py first")
 
     edges = gpd.read_file(path, layer=CROSSING_EDGES_LAYER).to_crs(METRIC_CRS)
     key = "crossing_id" if "crossing_id" in edges.columns else "area_id"

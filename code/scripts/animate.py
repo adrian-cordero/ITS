@@ -28,7 +28,7 @@ crossings picked yet, on all waiting areas.
 Zoom with the mouse wheel or the toolbar (magnifier, pan arrows, house = reset).
 
 Crossing areas (start/end edge + N lines in between) are drawn when
-pick_edges.py has made crossing_areas.gpkg.
+define_crossings.py has made crossing_areas.gpkg.
 
 Category codes: 1 car, 2 pedestrian, 3 bicycle, 4 trailer, 5 motorcycle,
 6 truck, 7 bus, 8 scooter, 9 streetcar.
@@ -39,14 +39,14 @@ import argparse
 import _bootstrap  # noqa: F401
 import matplotlib.pyplot as plt
 
-from its.areas import crossing_areas_path, crossing_extent, load_crossing_lines
+from its.crossings import crossing_areas_path, crossing_extent, load_crossing_lines
 from its.config import (
     ANIMATE_MARGIN, BICYCLE, CROSSING_LAYER, CROSSING_LINES, CROSSING_WIDTH,
     DEFAULT_PROJECT_LAYERS, MAPS_DIR, N_PARTS, PLOT_CRS, PROJECT_LAYERS,
 )
 from its.maps import load_basemap, load_project_layers
 from its.trajectories import counts_per_time, load_parts, parse_parts, parts_label
-from its.viz.areas import draw_crossing_lines
+from its.viz.crossings import draw_crossing_lines
 from its.viz.basemap import (
     add_satellite, draw_basemap, draw_project_layers, set_extent, set_extent_to_areas,
 )
@@ -71,7 +71,7 @@ def parse_args():
                         "Pass --layers with nothing after it for none.")
     p.add_argument("--lines", type=int, default=CROSSING_LINES, metavar="N",
                    help=f"lines between the start and end edge, for crossings without "
-                        f"their own number (set in pick_edges.py) "
+                        f"their own number (set in define_crossings.py) "
                         f"(default {CROSSING_LINES}; 0 = only the edges)")
     p.add_argument("--no-crossings", action="store_true",
                    help="don't draw crossing-area edges and lines")
@@ -132,7 +132,7 @@ def main():
             layer_handles += draw_crossing_lines(ax, lines)
         else:
             print(f"No crossing areas yet ({crossing_areas_path(CROSSING_LAYER).name} missing): "
-                  "run code/scripts/pick_edges.py")
+                  "run code/scripts/define_crossings.py")
     if args.satellite:
         add_satellite(ax)
 

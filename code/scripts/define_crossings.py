@@ -4,10 +4,10 @@ polygon to an end edge on another polygon of the same layer
 (CROSSING_LAYER in config.py, e.g. the waiting areas). The result is
 saved as a new GeoPackage.
 
-    python code/scripts/pick_edges.py                       # menu, W from config
-    python code/scripts/pick_edges.py --width 4             # default W = 4 m
-    python code/scripts/pick_edges.py --rebuild --width 4   # no window: rebuild from saved picks
-    python code/scripts/pick_edges.py --reset               # delete all crossings, start over
+    python code/scripts/define_crossings.py                       # menu, W from config
+    python code/scripts/define_crossings.py --width 4             # default W = 4 m
+    python code/scripts/define_crossings.py --rebuild --width 4   # no window: rebuild from saved picks
+    python code/scripts/define_crossings.py --reset               # delete all crossings, start over
 
 A window shows the street map with the areas numbered (orange) and the
 crossings numbered (#0, #1, ...). The terminal shows the crossings and
@@ -49,7 +49,7 @@ from datetime import datetime
 import _bootstrap  # noqa: F401
 import matplotlib.pyplot as plt
 
-from its.areas import (
+from its.crossings import (
     Crossing, build_crossings, crossing_geometry, crossing_length, crossing_lines,
     effective_lines, effective_width, load_picks, load_source, next_crossing_id, polygon_edges,
     reversed_crossing, save_crossings, save_picks,

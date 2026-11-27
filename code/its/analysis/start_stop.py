@@ -39,7 +39,7 @@ import numpy as np
 import pandas as pd
 import shapely
 
-from its.analysis.crossings import first_forward_per_track, forward_normal, line_crossings
+from its.analysis.line_passes import first_forward_per_track, forward_normal, line_passes
 from its.analysis.occupancy import area_stays
 from its.config import (
     EVERY_STOP, NEAR_DISTANCE, SNAPSHOT_EVENT_TYPES, STOP_DURATION, STOP_SPEED,
@@ -100,7 +100,7 @@ def local_frame(area, forward) -> LocalFrame:
 def detect_start_events(d, crossing, track_rows=None):
     """track_rows: d.groupby("track_id").indices, if already computed."""
     north = forward_normal(crossing["start_line"], crossing["end_line"])
-    triggers = first_forward_per_track(line_crossings(d, crossing["start_line"], north))
+    triggers = first_forward_per_track(line_passes(d, crossing["start_line"], north))
     if track_rows is None:
         track_rows = d.groupby("track_id").indices
     t = d["timestamp"].to_numpy()
@@ -183,7 +183,7 @@ def take_snapshot(here, trigger_track, polygon, stays, frame, near):
     return positions, counts
 
 
-def snapshot_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANCE,
+def start_stop_events(df, crossings, types=SNAPSHOT_EVENT_TYPES, near=NEAR_DISTANCE,
                     stop_speed=STOP_SPEED, stop_duration=STOP_DURATION, every_stop=EVERY_STOP):
     """
     df         cyclist rows: track_id, timestamp, utm_x, utm_y, speed
