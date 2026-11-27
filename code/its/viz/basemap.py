@@ -1,6 +1,8 @@
 """Draw the map underneath the trajectories."""
 
+import geopandas as gpd
 from matplotlib.patches import Patch
+from shapely.geometry import box
 
 from its.config import PLOT_CRS
 from its.viz.styles import (
@@ -18,6 +20,21 @@ def set_extent(ax, df, padding=50):
     """
     ax.set_xlim(df["x"].min() - padding, df["x"].max() + padding)
     ax.set_ylim(df["y"].min() - padding, df["y"].max() + padding)
+    ax.set_aspect("equal")
+
+
+def set_extent_to_areas(ax, geoms, margin_m=10.0, crs=PLOT_CRS):
+    """Zoom to the box around `geoms` (a GeoSeries in a metric CRS) plus
+    `margin_m` true metres on every side, centred on that box.
+
+    The margin is added before converting to `crs`, since a unit of
+    Web Mercator is not a metre. Call before drawing map layers.
+    """
+    x0, y0, x1, y1 = geoms.total_bounds
+    frame = box(x0 - margin_m, y0 - margin_m, x1 + margin_m, y1 + margin_m)
+    px0, py0, px1, py1 = gpd.GeoSeries([frame], crs=geoms.crs).to_crs(crs).total_bounds
+    ax.set_xlim(px0, px1)
+    ax.set_ylim(py0, py1)
     ax.set_aspect("equal")
 
 

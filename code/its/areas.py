@@ -40,6 +40,7 @@ from its.config import (
     CROSSING_AREAS_FILE, CROSSING_AREAS_LAYER, CROSSING_EDGES_LAYER, EDGE_PICKS_FILE, MAPS_DIR,
     METRIC_CRS, PROJECT_LAYERS,
 )
+from its.maps import single_parts
 
 # --------------------------------------------------
 # EDGES
@@ -216,7 +217,7 @@ def next_crossing_id(picks: dict) -> int:
 def load_source(layer: str, maps_dir=MAPS_DIR) -> gpd.GeoDataFrame:
     """The original layer in METRIC_CRS; its file CRS is kept in .attrs['file_crs']."""
     spec = PROJECT_LAYERS[layer]
-    gdf = gpd.read_file(maps_dir / spec["file"], layer=spec["layer"])
+    gdf = single_parts(gpd.read_file(maps_dir / spec["file"], layer=spec["layer"]))
     file_crs = gdf.crs
     gdf = gdf.to_crs(METRIC_CRS).reset_index(drop=True)
     gdf.attrs["file_crs"] = file_crs
@@ -258,6 +259,20 @@ def build_crossings(source: gpd.GeoDataFrame, picks: dict, width: float):
     edges = gpd.GeoDataFrame(edges, columns=["crossing_id", "role", "geometry"],
                              geometry="geometry", crs=source.crs)
     return bands, edges
+
+
+def crossing_extent(layer: str, width: float, maps_dir=MAPS_DIR) -> gpd.GeoSeries:
+    """The polygons of `layer` used by at least one crossing (as start or
+    end area) plus the crossing bands, in METRIC_CRS. With no crossings
+    picked yet, every polygon of the layer."""
+    source = load_source(layer, maps_dir)
+    picks = load_picks(layer, source, maps_dir)
+    if not picks:
+        return source.geometry
+    used = sorted({a for c in picks.values() for a in (c.start_area, c.end_area)})
+    bands, _ = build_crossings(source, picks, width)
+    return gpd.GeoSeries(list(source.geometry.iloc[used]) + list(bands.geometry),
+                         crs=source.crs)
 
 
 def crossing_areas_path(layer: str, maps_dir=MAPS_DIR):

@@ -118,7 +118,7 @@ BASEMAP_RELATION_TYPES = ("street",)
 #   tag         (optional) substring that must appear in `other_tags`
 #               (OSM layers), e.g. '"bicycle"=>"designated"'
 PROJECT_LAYERS = {
-    "waiting_areas":  {"file": "waiting_areas.gpkg", "layer": "waiting_areas"},
+    "waiting_areas":  {"file": "new_waiting_areas.gpkg", "layer": "waiting_areas"},
     "merge_areas":    {"file": "merge_areas.gpkg", "layer": "merge_areas"},
     # system.gpkg is labelled EPSG:3857 but its coordinates are lon/lat
     "system":         {"file": "system.gpkg", "layer": "system", "assume_crs": 4326},
@@ -144,6 +144,11 @@ CROSSING_WIDTH = 8.0
 # N: number of lines drawn between the start and end edge (default for
 # animate.py --lines). They split the length L into N + 1 equal parts.
 CROSSING_LINES = 4
+
+# animate.py frames the map on the waiting areas used by a crossing (and
+# the crossing bands), plus this many metres on every side. --margin
+# changes it, --full shows all trajectories instead.
+ANIMATE_MARGIN = 10.0
 
 # Picked edges, stored in MAPS_DIR next to the layers.
 EDGE_PICKS_FILE = "edge_picks.csv"

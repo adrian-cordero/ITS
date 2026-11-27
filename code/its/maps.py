@@ -40,9 +40,22 @@ def list_available(maps_dir=MAPS_DIR) -> dict:
     }
 
 
+def single_parts(gdf: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
+    """Turn one-part MultiPolygons (QGIS saves layers as MultiPolygon by
+    default) into plain Polygons, so .exterior works. Rows and their order
+    are kept; MultiPolygons with several parts are left as they are."""
+    def one(g):
+        if g is not None and g.geom_type == "MultiPolygon" and len(g.geoms) == 1:
+            return g.geoms[0]
+        return g
+    gdf = gdf.copy()
+    gdf[gdf.geometry.name] = gdf.geometry.apply(one)
+    return gdf
+
+
 def load_layer(spec: dict, maps_dir=MAPS_DIR, crs=PLOT_CRS) -> gpd.GeoDataFrame:
     """Load one layer described by a config.PROJECT_LAYERS entry."""
-    gdf = gpd.read_file(maps_dir / spec["file"], layer=spec["layer"])
+    gdf = single_parts(gpd.read_file(maps_dir / spec["file"], layer=spec["layer"]))
 
     if "assume_crs" in spec:
         gdf = gdf.set_crs(spec["assume_crs"], allow_override=True)
